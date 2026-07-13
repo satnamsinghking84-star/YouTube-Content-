@@ -509,12 +509,13 @@ export default function App() {
       <main className="max-w-7xl w-full mx-auto px-4 md:px-6 mt-6 space-y-6">
         
         {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
-        <section className="space-y-3">
+        <section className="space-y-3" id="daily-plan-section">
           <DailyPlan
             channels={channels}
             channelId={activeChannelId}
             selectedDate={selectedDate}
             dailyTasks={dailyTasks}
+            items={contentItems}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
             onDeleteTask={handleDeleteTask}
@@ -530,8 +531,8 @@ export default function App() {
             dailyTasks={dailyTasks}
             onSelectDate={(date) => {
               setSelectedDate(date);
-              // Scroll to details section smoothly
-              const el = document.getElementById('scheduler-form-section');
+              // Scroll to today's plan checklist smoothly
+              const el = document.getElementById('daily-plan-section');
               if (el) {
                 el.scrollIntoView({ behavior: 'smooth' });
               }

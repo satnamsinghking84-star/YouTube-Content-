@@ -15,13 +15,14 @@ import {
   Save,
   Check
 } from 'lucide-react';
-import { DailyPlanningTask, YouTubeChannel } from '../types';
+import { DailyPlanningTask, YouTubeChannel, ContentScheduleItem } from '../types';
 
 interface DailyPlanProps {
   channels: YouTubeChannel[];
   channelId: string;
   selectedDate: string;
   dailyTasks: DailyPlanningTask[];
+  items?: ContentScheduleItem[];
   onAddTask: (task: DailyPlanningTask) => void;
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string) => void;
@@ -40,6 +41,7 @@ export default function DailyPlan({
   channelId,
   selectedDate,
   dailyTasks,
+  items = [],
   onAddTask,
   onToggleTask,
   onDeleteTask,
@@ -183,9 +185,16 @@ export default function DailyPlan({
     setSelectedChannelIdForNewTask(channelId);
   }, [channelId]);
 
+  const [selectedDetailVideo, setSelectedDetailVideo] = useState<ContentScheduleItem | null>(null);
+
   // Filter tasks for the selected date (across ALL channels)
   const selectedDateTasks = dailyTasks.filter(
     (task) => task.date === selectedDate
+  );
+
+  // Filter videos for the selected date (across ALL channels)
+  const selectedDateVideos = items.filter(
+    (item) => item.date === selectedDate
   );
 
   const totalTasksCount = selectedDateTasks.length;
@@ -373,6 +382,81 @@ export default function DailyPlan({
             exit={{ opacity: 0, height: 0 }}
             className="space-y-4"
           >
+            {/* Highlighted Scheduled Videos Section */}
+            {selectedDateVideos.length > 0 && (
+              <div className="bg-indigo-50/60 border-2 border-indigo-950 rounded-2xl p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base animate-bounce">🎬</span>
+                    <h5 className="text-[11px] font-black text-indigo-950 uppercase tracking-wider">
+                      Aaj Ke Scheduled Videos ({selectedDateVideos.length})
+                    </h5>
+                  </div>
+                  <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-100 border border-indigo-300 px-2 py-0.5 rounded-full uppercase tracking-normal">
+                    Click to Open Full Details ✨
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {selectedDateVideos.map((item) => {
+                    const ch = channels.find(c => c.id === item.channelId);
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => setSelectedDetailVideo(item)}
+                        className="bg-white hover:bg-slate-50 border-2 border-slate-950 rounded-xl p-3 transition-all cursor-pointer hover:shadow-md active:scale-99 flex items-center gap-3.5 group"
+                      >
+                        {item.thumbnail ? (
+                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-950 bg-slate-100 shrink-0 shadow-3xs">
+                            <img 
+                              src={item.thumbnail} 
+                              alt={item.title} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-all"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-14 h-14 bg-slate-50 rounded-lg border border-slate-950 shrink-0 flex flex-col items-center justify-center font-bold text-[9px] text-slate-400 gap-0.5">
+                            <span>🖼️</span>
+                            <span>No Thumbnail</span>
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-slate-950 group-hover:text-indigo-600 truncate leading-snug" title={item.title}>
+                            {item.title}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {ch && (
+                              <span className="text-[8px] font-black text-slate-500 bg-slate-100 border border-slate-250 px-1.5 py-0.5 rounded-md truncate max-w-[90px]">
+                                📺 {ch.name}
+                              </span>
+                            )}
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                              item.status === 'Published' 
+                                ? 'bg-teal-50 border-teal-300 text-teal-700' 
+                                : item.status === 'Scheduled'
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : item.status === 'Editing'
+                                ? 'bg-sky-50 border-sky-300 text-sky-700'
+                                : item.status === 'Recording'
+                                ? 'bg-rose-50 border-rose-300 text-rose-700'
+                                : item.status === 'Scripting'
+                                ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                                : item.status === 'Researching'
+                                ? 'bg-amber-50 border-amber-300 text-amber-700'
+                                : 'bg-slate-50 border-slate-300 text-slate-750'
+                            }`}>
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Task List Container - Grouped by Channel */}
             <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
               {selectedDateTasks.length === 0 ? (
@@ -953,6 +1037,141 @@ export default function DailyPlan({
                   className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl transition-all border border-slate-950 cursor-pointer"
                 >
                   Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- VIDEO DETAILS POPUP OVERLAY --- */}
+      <AnimatePresence>
+        {selectedDetailVideo && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border-2 border-slate-950 rounded-2xl shadow-xl max-w-lg w-full overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-150 flex items-center justify-between bg-slate-50/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-slate-950 shadow-3xs flex items-center justify-center font-bold text-sm">
+                    🎬
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-950 text-sm md:text-base">Scheduled Video Details</h3>
+                    <p className="text-[10px] text-indigo-700 font-extrabold uppercase tracking-wider">
+                      {channels.find(c => c.id === selectedDetailVideo.channelId)?.name || 'Channel'} Video
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedDetailVideo(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-xs p-1.5 hover:bg-slate-100 rounded-lg cursor-pointer border border-transparent transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                {/* Thumbnail Preview */}
+                {selectedDetailVideo.thumbnail ? (
+                  <div className="w-full h-44 border-2 border-slate-950 rounded-xl overflow-hidden shadow-xs relative bg-slate-100">
+                    <img 
+                      src={selectedDetailVideo.thumbnail} 
+                      alt={selectedDetailVideo.title} 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute top-2.5 right-2.5">
+                      <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md border border-slate-950 shadow-xs ${
+                        selectedDetailVideo.status === 'Published' 
+                          ? 'bg-teal-500 text-white' 
+                          : selectedDetailVideo.status === 'Scheduled'
+                          ? 'bg-emerald-500 text-white'
+                          : selectedDetailVideo.status === 'Editing'
+                          ? 'bg-sky-500 text-white'
+                          : selectedDetailVideo.status === 'Recording'
+                          ? 'bg-rose-500 text-white'
+                          : selectedDetailVideo.status === 'Scripting'
+                          ? 'bg-indigo-500 text-white'
+                          : selectedDetailVideo.status === 'Researching'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-slate-400 text-white'
+                      }`}>
+                        {selectedDetailVideo.status}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-44 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1.5">
+                    <span className="text-3xl text-slate-300">🖼️</span>
+                    <p className="text-xs font-bold text-slate-400">No Custom Thumbnail Added</p>
+                  </div>
+                )}
+
+                {/* Title */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Video Title</span>
+                  <h4 className="font-black text-slate-950 text-sm md:text-base leading-snug">
+                    {selectedDetailVideo.title}
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 border-y border-slate-100 py-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status</span>
+                    <p className="font-bold text-slate-800 mt-0.5 flex items-center gap-1.5">
+                      <span className={`w-2.5 h-2.5 rounded-full border border-slate-950 ${
+                        selectedDetailVideo.status === 'Published' ? 'bg-teal-500' :
+                        selectedDetailVideo.status === 'Scheduled' ? 'bg-emerald-500' :
+                        selectedDetailVideo.status === 'Editing' ? 'bg-sky-500' :
+                        selectedDetailVideo.status === 'Recording' ? 'bg-rose-500' :
+                        selectedDetailVideo.status === 'Scripting' ? 'bg-indigo-500' :
+                        selectedDetailVideo.status === 'Researching' ? 'bg-amber-500' : 'bg-slate-400'
+                      }`} />
+                      {selectedDetailVideo.status}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Schedule Date</span>
+                    <p className="font-bold text-slate-800 mt-0.5">
+                      📅 {selectedDetailVideo.date}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Description */}
+                {selectedDetailVideo.description && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Description</span>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 font-bold text-xs text-slate-700 leading-relaxed max-h-24 overflow-y-auto whitespace-pre-wrap">
+                      {selectedDetailVideo.description}
+                    </div>
+                  </div>
+                )}
+
+                {/* Production Notes / Strategy */}
+                {selectedDetailVideo.notes && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Production Notes & Scripting Ideas</span>
+                    <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 font-bold text-xs text-indigo-950 leading-relaxed max-h-24 overflow-y-auto whitespace-pre-wrap">
+                      💡 {selectedDetailVideo.notes}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end">
+                <button
+                  onClick={() => setSelectedDetailVideo(null)}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl transition-all border border-slate-950 cursor-pointer shadow-xs"
+                >
+                  Close details
                 </button>
               </div>
             </motion.div>
