@@ -240,7 +240,7 @@ export default function ContentScheduler({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* PANEL A: SELECTED DATE VIDEO STRATEGY LIST */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-6 shadow-xs flex flex-col justify-between">
+        <div className="bg-white border-2 border-slate-950 rounded-2xl p-4 md:p-6 shadow-xs flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-150 pb-3">
               <div>
@@ -334,7 +334,7 @@ export default function ContentScheduler({
         </div>
 
         {/* PANEL B: SCHEDULER INPUT FORM (VERTICAL RIGHT TRAY) */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between">
+        <div className="bg-white border-2 border-slate-950 rounded-2xl shadow-xs overflow-hidden flex flex-col justify-between">
           <div className="bg-slate-50/70 px-4 md:px-6 py-4 border-b border-slate-150 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">

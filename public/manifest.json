@@ -29,13 +29,6 @@
   ],
   "shortcuts": [
     {
-      "name": "Live Widgets Board",
-      "short_name": "Widgets",
-      "description": "View live widgets for your YouTube channel",
-      "url": "/?shortcut=widgets",
-      "icons": [{ "src": "/app-icon.svg", "sizes": "any" }]
-    },
-    {
       "name": "Daily Goals",
       "short_name": "Daily Goals",
       "description": "Check and manage today's task checklist",

@@ -208,7 +208,7 @@ export default function ContentCalendar({
   };
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden" id="calendar-view-box">
+    <div className="bg-white border-2 border-slate-950 rounded-2xl shadow-sm overflow-hidden" id="calendar-view-box">
       
       {/* Premium Header */}
       <div className="bg-slate-50/80 px-4 md:px-6 py-4 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

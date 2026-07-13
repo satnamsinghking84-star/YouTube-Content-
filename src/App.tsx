@@ -17,7 +17,6 @@ import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types'
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
-import WidgetsBoard from './components/WidgetsBoard';
 import { 
   collection, 
   onSnapshot, 
@@ -94,10 +93,6 @@ export default function App() {
     return new Date(2026, 6, 13).toISOString().split('T')[0];
   });
   const [loading, setLoading] = useState(true);
-  const [isWidgetOnlyMode, setIsWidgetOnlyMode] = useState<boolean>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('shortcut') === 'widgets' || localStorage.getItem('yt_widget_only') === 'true';
-  });
 
   // --- UI Interactive States ---
   const [showAddChannelModal, setShowAddChannelModal] = useState(false);
@@ -406,25 +401,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Widget Mode Toggle */}
-            <button
-              onClick={() => {
-                const nextVal = !isWidgetOnlyMode;
-                setIsWidgetOnlyMode(nextVal);
-                localStorage.setItem('yt_widget_only', nextVal ? 'true' : 'false');
-                triggerToast(nextVal ? "Widget Mode Activated! 📱" : "Full Dashboard Restored! 🖥️", "info");
-              }}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-black rounded-xl border transition-all cursor-pointer ${
-                isWidgetOnlyMode 
-                  ? 'bg-rose-50 text-rose-700 border-rose-200 shadow-sm shadow-rose-100' 
-                  : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-              }`}
-              title="Toggle Phone Widgets Mode"
-            >
-              <span className="text-xs">📱</span>
-              <span>{isWidgetOnlyMode ? "Dashboard View" : "Widget View"}</span>
-            </button>
-
             {/* Quick Add Channel Action */}
             <button
               onClick={() => setShowAddChannelModal(true)}
@@ -531,168 +507,84 @@ export default function App() {
       {/* --- MAIN STRATEGY CONTAINER (Daily Plan first, then Calendar, then Scheduler Details) --- */}
       <main className="max-w-7xl w-full mx-auto px-4 md:px-6 mt-6 space-y-6">
         
-        {isWidgetOnlyMode ? (
-          <div className="space-y-4">
-            {/* Elegant banner advising how to switch back */}
-            <div className="bg-gradient-to-r from-rose-500 to-indigo-600 p-4 rounded-2xl text-white text-xs font-semibold flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">⚡</span>
-                <p>
-                  <strong>Widget Mode Active:</strong> Aap directly live widgets use kar sakte hain jo aapke Firestore database se sync hote hain.
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsWidgetOnlyMode(false);
-                  localStorage.setItem('yt_widget_only', 'false');
-                }}
-                className="px-3.5 py-1.5 bg-white text-indigo-700 font-extrabold rounded-lg hover:bg-slate-100 transition-all cursor-pointer active:scale-95 text-[11px] shrink-0"
-              >
-                Full Dashboard Dikhao 🖥️
-              </button>
-            </div>
+        {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
+        <section className="space-y-3">
+          <DailyPlan
+            channels={channels}
+            channelId={activeChannelId}
+            selectedDate={selectedDate}
+            dailyTasks={dailyTasks}
+            onAddTask={handleAddTask}
+            onToggleTask={handleToggleTask}
+            onDeleteTask={handleDeleteTask}
+          />
+        </section>
 
-            {/* MOBILE HOME SCREEN & WIDGET PREVIEW SECTION */}
-            <section className="space-y-3">
-              <WidgetsBoard
-                channelId={activeChannelId}
-                channelName={activeChannel?.name || 'My Channel'}
-                dailyTasks={dailyTasks}
-                contentItems={contentItems}
-                onAddTask={handleAddTask}
-                onToggleTask={handleToggleTask}
-                onAddContentItem={async (item) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', item.id), item);
-                    triggerToast(`"${item.title}" saved to video ideas database!`, 'success');
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Widget se idea save nahi ho paya.", "error");
-                  }
-                }}
-                onUpdateContentItem={async (updatedItem) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                    triggerToast(`Status updated to "${updatedItem.status}"!`, 'info');
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Widget update failed.", "error");
-                  }
-                }}
-              />
-            </section>
-          </div>
-        ) : (
-          <>
-            {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
-            <section className="space-y-3">
-              <DailyPlan
-                channelId={activeChannelId}
-                selectedDate={selectedDate}
-                dailyTasks={dailyTasks}
-                onAddTask={handleAddTask}
-                onToggleTask={handleToggleTask}
-                onDeleteTask={handleDeleteTask}
-              />
-            </section>
+        {/* CALENDAR SECTION (Pura Box Ke Andar) */}
+        <section className="space-y-3">
+          <ContentCalendar
+            channelId={activeChannelId}
+            items={contentItems}
+            selectedDate={selectedDate}
+            dailyTasks={dailyTasks}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              // Scroll to details section smoothly
+              const el = document.getElementById('scheduler-form-section');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+            onQuickAddForDate={(date) => {
+              setSelectedDate(date);
+              const el = document.getElementById('scheduler-form-section');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+          />
+        </section>
 
-            {/* MOBILE HOME SCREEN & WIDGET PREVIEW SECTION */}
-            <section className="space-y-3">
-              <WidgetsBoard
-                channelId={activeChannelId}
-                channelName={activeChannel?.name || 'My Channel'}
-                dailyTasks={dailyTasks}
-                contentItems={contentItems}
-                onAddTask={handleAddTask}
-                onToggleTask={handleToggleTask}
-                onAddContentItem={async (item) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', item.id), item);
-                    triggerToast(`"${item.title}" saved to video ideas database!`, 'success');
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Widget se idea save nahi ho paya.", "error");
-                  }
-                }}
-                onUpdateContentItem={async (updatedItem) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                    triggerToast(`Status updated to "${updatedItem.status}"!`, 'info');
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Widget update failed.", "error");
-                  }
-                }}
-              />
-            </section>
-
-            {/* CALENDAR SECTION (Pura Box Ke Andar) */}
-            <section className="space-y-3">
-              <ContentCalendar
-                channelId={activeChannelId}
-                items={contentItems}
-                selectedDate={selectedDate}
-                dailyTasks={dailyTasks}
-                onSelectDate={(date) => {
-                  setSelectedDate(date);
-                  // Scroll to details section smoothly
-                  const el = document.getElementById('scheduler-form-section');
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }}
-                onQuickAddForDate={(date) => {
-                  setSelectedDate(date);
-                  const el = document.getElementById('scheduler-form-section');
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth' });
-                  }
-                }}
-              />
-            </section>
-
-            {/* DETAILS SECTION (Dynamic scheduling planner & list for the selected calendar date) */}
-            <section>
-              <ContentScheduler
-                channelId={activeChannelId}
-                channelName={activeChannel?.name || 'My Channel'}
-                items={contentItems}
-                selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
-                onAddItem={async (item) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', item.id), item);
-                    triggerToast(`"${item.title}" scheduled successfully!`);
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Failed to save content item", "error");
-                  }
-                }}
-                onDeleteItem={async (id) => {
-                  const itemToDelete = contentItems.find(item => item.id === id);
-                  try {
-                    await deleteDoc(doc(db, 'content_items', id));
-                    if (itemToDelete) {
-                      triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
-                    }
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Failed to delete content item", "error");
-                  }
-                }}
-                onUpdateItem={async (updatedItem) => {
-                  try {
-                    await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                    triggerToast("Video details updated!");
-                  } catch (err) {
-                    console.error(err);
-                    triggerToast("Failed to update details", "error");
-                  }
-                }}
-              />
-            </section>
-          </>
-        )}
+        {/* DETAILS SECTION (Dynamic scheduling planner & list for the selected calendar date) */}
+        <section>
+          <ContentScheduler
+            channelId={activeChannelId}
+            channelName={activeChannel?.name || 'My Channel'}
+            items={contentItems}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onAddItem={async (item) => {
+              try {
+                await setDoc(doc(db, 'content_items', item.id), item);
+                triggerToast(`"${item.title}" scheduled successfully!`);
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to save content item", "error");
+              }
+            }}
+            onDeleteItem={async (id) => {
+              const itemToDelete = contentItems.find(item => item.id === id);
+              try {
+                await deleteDoc(doc(db, 'content_items', id));
+                if (itemToDelete) {
+                  triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
+                }
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to delete content item", "error");
+              }
+            }}
+            onUpdateItem={async (updatedItem) => {
+              try {
+                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                triggerToast("Video details updated!");
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to update details", "error");
+              }
+            }}
+          />
+        </section>
 
       </main>
     </div>
