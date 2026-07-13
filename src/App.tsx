@@ -17,6 +17,17 @@ import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types'
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  writeBatch, 
+  getDocs, 
+  query 
+} from 'firebase/firestore';
+import { db } from './firebase';
 
 // Simple starting seed data
 const INITIAL_CHANNELS: YouTubeChannel[] = [
@@ -71,31 +82,17 @@ const PRESET_AVATAR_COLORS = [
 ];
 
 export default function App() {
-  // --- Persistent States from Local Storage ---
-  const [channels, setChannels] = useState<YouTubeChannel[]>(() => {
-    const saved = localStorage.getItem('yt_channels');
-    return saved ? JSON.parse(saved) : INITIAL_CHANNELS;
-  });
-
+  // --- Persistent States from Local Storage / Firebase ---
+  const [channels, setChannels] = useState<YouTubeChannel[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>(() => {
-    const saved = localStorage.getItem('yt_active_channel_id');
-    if (saved) return saved;
-    return INITIAL_CHANNELS[0]?.id || '';
+    return localStorage.getItem('yt_active_channel_id') || '';
   });
-
-  const [contentItems, setContentItems] = useState<ContentScheduleItem[]>(() => {
-    const saved = localStorage.getItem('yt_content_items');
-    return saved ? JSON.parse(saved) : INITIAL_CONTENT;
-  });
-
-  const [dailyTasks, setDailyTasks] = useState<DailyPlanningTask[]>(() => {
-    const saved = localStorage.getItem('yt_daily_tasks');
-    return saved ? JSON.parse(saved) : INITIAL_DAILY_TASKS;
-  });
-
+  const [contentItems, setContentItems] = useState<ContentScheduleItem[]>([]);
+  const [dailyTasks, setDailyTasks] = useState<DailyPlanningTask[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date(2026, 6, 13).toISOString().split('T')[0];
   });
+  const [loading, setLoading] = useState(true);
 
   // --- UI Interactive States ---
   const [showAddChannelModal, setShowAddChannelModal] = useState(false);
@@ -106,22 +103,97 @@ export default function App() {
   // Alert & Notification toast states
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // --- Save to Local Storage ---
+  // --- Initialize Firebase & Setup listeners ---
   useEffect(() => {
-    localStorage.setItem('yt_channels', JSON.stringify(channels));
-  }, [channels]);
+    let unsubscribeChannels: () => void;
+    let unsubscribeContent: () => void;
+    let unsubscribeTasks: () => void;
 
+    const initFirebase = async () => {
+      try {
+        const channelsRef = collection(db, 'channels');
+        const querySnapshot = await getDocs(query(channelsRef));
+        
+        if (querySnapshot.empty) {
+          console.log('Seeding initial data into Firestore...');
+          const batch = writeBatch(db);
+          
+          INITIAL_CHANNELS.forEach(chan => {
+            batch.set(doc(db, 'channels', chan.id), chan);
+          });
+          
+          INITIAL_CONTENT.forEach(item => {
+            batch.set(doc(db, 'content_items', item.id), item);
+          });
+          
+          INITIAL_DAILY_TASKS.forEach(task => {
+            batch.set(doc(db, 'daily_tasks', task.id), task);
+          });
+          
+          await batch.commit();
+        }
+      } catch (err) {
+        console.error("Error seeding initial data: ", err);
+      }
+
+      // Realtime snapshots
+      unsubscribeChannels = onSnapshot(collection(db, 'channels'), (snapshot) => {
+        const loadedChannels: YouTubeChannel[] = [];
+        snapshot.forEach((doc) => {
+          loadedChannels.push(doc.data() as YouTubeChannel);
+        });
+        if (loadedChannels.length > 0) {
+          setChannels(loadedChannels);
+          // If no active channel is selected yet, choose the first one
+          setActiveChannelId(prev => {
+            if (prev && loadedChannels.some(c => c.id === prev)) return prev;
+            const fallbackId = loadedChannels[0]?.id || '';
+            localStorage.setItem('yt_active_channel_id', fallbackId);
+            return fallbackId;
+          });
+        }
+      }, (error) => {
+        console.error("Channels snapshot error: ", error);
+      });
+
+      unsubscribeContent = onSnapshot(collection(db, 'content_items'), (snapshot) => {
+        const loadedContent: ContentScheduleItem[] = [];
+        snapshot.forEach((doc) => {
+          loadedContent.push(doc.data() as ContentScheduleItem);
+        });
+        setContentItems(loadedContent);
+      }, (error) => {
+        console.error("Content items snapshot error: ", error);
+      });
+
+      unsubscribeTasks = onSnapshot(collection(db, 'daily_tasks'), (snapshot) => {
+        const loadedTasks: DailyPlanningTask[] = [];
+        snapshot.forEach((doc) => {
+          loadedTasks.push(doc.data() as DailyPlanningTask);
+        });
+        setDailyTasks(loadedTasks);
+        setLoading(false);
+      }, (error) => {
+        console.error("Tasks snapshot error: ", error);
+        setLoading(false);
+      });
+    };
+
+    initFirebase();
+
+    return () => {
+      if (unsubscribeChannels) unsubscribeChannels();
+      if (unsubscribeContent) unsubscribeContent();
+      if (unsubscribeTasks) unsubscribeTasks();
+    };
+  }, []);
+
+  // Save activeChannelId preference to local storage
   useEffect(() => {
-    localStorage.setItem('yt_active_channel_id', activeChannelId);
+    if (activeChannelId) {
+      localStorage.setItem('yt_active_channel_id', activeChannelId);
+    }
   }, [activeChannelId]);
-
-  useEffect(() => {
-    localStorage.setItem('yt_content_items', JSON.stringify(contentItems));
-  }, [contentItems]);
-
-  useEffect(() => {
-    localStorage.setItem('yt_daily_tasks', JSON.stringify(dailyTasks));
-  }, [dailyTasks]);
 
   // Custom Toast helper
   const triggerToast = (text: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -132,22 +204,40 @@ export default function App() {
   };
 
   // --- Daily Planning Task Handlers ---
-  const handleAddTask = (task: DailyPlanningTask) => {
-    setDailyTasks(prev => [...prev, task]);
-    triggerToast("Task added successfully!");
+  const handleAddTask = async (task: DailyPlanningTask) => {
+    try {
+      await setDoc(doc(db, 'daily_tasks', task.id), task);
+      triggerToast("Task added successfully!");
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to add task", "error");
+    }
   };
 
-  const handleToggleTask = (id: string) => {
-    setDailyTasks(prev => prev.map(t => t.id === id ? { ...t, isCompleted: !t.isCompleted } : t));
+  const handleToggleTask = async (id: string) => {
+    try {
+      const task = dailyTasks.find(t => t.id === id);
+      if (task) {
+        await setDoc(doc(db, 'daily_tasks', id), { ...task, isCompleted: !task.isCompleted });
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to update task", "error");
+    }
   };
 
-  const handleDeleteTask = (id: string) => {
-    setDailyTasks(prev => prev.filter(t => t.id !== id));
-    triggerToast("Task deleted.", "info");
+  const handleDeleteTask = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'daily_tasks', id));
+      triggerToast("Task deleted.", "info");
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to delete task", "error");
+    }
   };
 
   // --- Multi Channel Handlers ---
-  const handleAddChannel = (e: React.FormEvent) => {
+  const handleAddChannel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newChannelName.trim()) return;
 
@@ -163,37 +253,72 @@ export default function App() {
       avatarColor: selectedAvatarColor
     };
 
-    setChannels([...channels, newChan]);
-    setActiveChannelId(newChannelId);
-    
-    // Reset Form & Close
-    setNewChannelName('');
-    setNewChannelHandle('');
-    setSelectedAvatarColor(PRESET_AVATAR_COLORS[Math.floor(Math.random() * PRESET_AVATAR_COLORS.length)]);
-    setShowAddChannelModal(false);
-    triggerToast(`"${newChan.name}" created successfully!`);
+    try {
+      await setDoc(doc(db, 'channels', newChannelId), newChan);
+      setActiveChannelId(newChannelId);
+      
+      // Reset Form & Close
+      setNewChannelName('');
+      setNewChannelHandle('');
+      setSelectedAvatarColor(PRESET_AVATAR_COLORS[Math.floor(Math.random() * PRESET_AVATAR_COLORS.length)]);
+      setShowAddChannelModal(false);
+      triggerToast(`"${newChan.name}" created successfully!`);
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to create channel", "error");
+    }
   };
 
-  const handleDeleteChannel = (id: string, name: string) => {
+  const handleDeleteChannel = async (id: string, name: string) => {
     if (channels.length <= 1) {
       triggerToast("At least one active channel is required!", 'error');
       return;
     }
 
     if (window.confirm(`Are you sure you want to delete "${name}"? This will erase all its video strategies.`)) {
-      const remainingChannels = channels.filter(c => c.id !== id);
-      setChannels(remainingChannels);
-      setContentItems(contentItems.filter(item => item.channelId !== id));
+      try {
+        await deleteDoc(doc(db, 'channels', id));
+        
+        // Batch delete content items and daily tasks belonging to this channel
+        const batch = writeBatch(db);
+        contentItems.filter(item => item.channelId === id).forEach(item => {
+          batch.delete(doc(db, 'content_items', item.id));
+        });
+        dailyTasks.filter(task => task.channelId === id).forEach(task => {
+          batch.delete(doc(db, 'daily_tasks', task.id));
+        });
+        await batch.commit();
 
-      if (activeChannelId === id) {
-        setActiveChannelId(remainingChannels[0].id);
+        if (activeChannelId === id) {
+          const remaining = channels.filter(c => c.id !== id);
+          if (remaining.length > 0) {
+            setActiveChannelId(remaining[0].id);
+          }
+        }
+        triggerToast(`Removed "${name}" workspace.`);
+      } catch (err) {
+        console.error(err);
+        triggerToast("Failed to delete channel", "error");
       }
-      triggerToast(`Removed "${name}" workspace.`);
     }
   };
 
   // Get current active channel object
   const activeChannel = channels.find(c => c.id === activeChannelId) || channels[0];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#faf9f6] flex flex-col items-center justify-center font-sans antialiased">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+          <div className="text-center">
+            <h2 className="text-lg font-black text-slate-800">Saving & Loading Online...</h2>
+            <p className="text-xs text-slate-500 font-semibold mt-1">Connecting to Google Cloud Firestore</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf9f6] flex flex-col font-sans selection:bg-indigo-100 antialiased pb-16 text-slate-800">
@@ -427,20 +552,35 @@ export default function App() {
             items={contentItems}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
-            onAddItem={(item) => {
-              setContentItems([...contentItems, item]);
-              triggerToast(`"${item.title}" scheduled successfully!`);
-            }}
-            onDeleteItem={(id) => {
-              const itemToDelete = contentItems.find(item => item.id === id);
-              setContentItems(contentItems.filter(item => item.id !== id));
-              if (itemToDelete) {
-                triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
+            onAddItem={async (item) => {
+              try {
+                await setDoc(doc(db, 'content_items', item.id), item);
+                triggerToast(`"${item.title}" scheduled successfully!`);
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to save content item", "error");
               }
             }}
-            onUpdateItem={(updatedItem) => {
-              setContentItems(contentItems.map(item => item.id === updatedItem.id ? updatedItem : item));
-              triggerToast("Video details updated!");
+            onDeleteItem={async (id) => {
+              const itemToDelete = contentItems.find(item => item.id === id);
+              try {
+                await deleteDoc(doc(db, 'content_items', id));
+                if (itemToDelete) {
+                  triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
+                }
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to delete content item", "error");
+              }
+            }}
+            onUpdateItem={async (updatedItem) => {
+              try {
+                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                triggerToast("Video details updated!");
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to update details", "error");
+              }
             }}
           />
         </section>
