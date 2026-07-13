@@ -22,4 +22,5 @@ export interface DailyPlanningTask {
   date: string; // YYYY-MM-DD
   text: string;
   isCompleted: boolean;
+  targetTime?: string; // Optional daily deadline/target time (e.g. "12:00 PM")
 }
