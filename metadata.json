@@ -1,0 +1,6 @@
+{
+  "name": "YouTube Content Planner & Mind Map",
+  "description": "A professional and clean workspace to manage multiple YouTube channels, mind map content strategies, and schedule videos with thumbnail previews.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
