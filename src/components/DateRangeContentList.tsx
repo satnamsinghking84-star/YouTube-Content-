@@ -1,12 +1,30 @@
 import React, { useState } from 'react';
-import { CalendarDays, Play, Image as ImageIcon, SlidersHorizontal, ChevronRight, Video } from 'lucide-react';
-import { ContentScheduleItem, YouTubeChannel } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  CalendarDays, 
+  Play, 
+  Image as ImageIcon, 
+  SlidersHorizontal, 
+  ChevronRight, 
+  Video, 
+  X,
+  Pencil,
+  Save,
+  FileSpreadsheet,
+  Download,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
+import { ContentScheduleItem, YouTubeChannel, DailyPlanningTask } from '../types';
 
 interface DateRangeContentListProps {
   channels: YouTubeChannel[];
   items: ContentScheduleItem[];
   selectedDate: string;
   onSelectDate: (date: string) => void;
+  onUpdateItem?: (item: ContentScheduleItem) => void;
+  dailyTasks?: DailyPlanningTask[];
 }
 
 type RangeOption = 'selected' | 'week' | 'month' | 'all';
@@ -16,8 +34,22 @@ export default function DateRangeContentList({
   items,
   selectedDate,
   onSelectDate,
+  onUpdateItem,
+  dailyTasks = [],
 }: DateRangeContentListProps) {
   const [rangeMode, setRangeMode] = useState<RangeOption>('week');
+  const [selectedItemForPreview, setSelectedItemForPreview] = useState<ContentScheduleItem | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // Local states for editing inside the modal
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editStatus, setEditStatus] = useState<ContentScheduleItem['status']>('Draft');
+  const [editChannelId, setEditChannelId] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editThumbnail, setEditThumbnail] = useState('');
+  const [editDate, setEditDate] = useState('');
 
   // Helper to parse dates securely
   const parseDate = (dateStr: string) => {
@@ -123,64 +155,190 @@ export default function DateRangeContentList({
     }
   };
 
+  // Setup preview states
+  const handleSelectForPreview = (item: ContentScheduleItem) => {
+    setSelectedItemForPreview(item);
+    setIsEditing(false); // Reset edit view
+    setEditTitle(item.title || '');
+    setEditDescription(item.description || '');
+    setEditStatus(item.status || 'Draft');
+    setEditChannelId(item.channelId || '');
+    setEditNotes(item.notes || '');
+    setEditThumbnail(item.thumbnail || '');
+    setEditDate(item.date || '');
+  };
+
+  // Save the edited parameters
+  const handleSaveEdit = () => {
+    if (!selectedItemForPreview) return;
+    const updatedItem: ContentScheduleItem = {
+      ...selectedItemForPreview,
+      title: editTitle,
+      description: editDescription,
+      status: editStatus,
+      channelId: editChannelId,
+      notes: editNotes,
+      thumbnail: editThumbnail,
+      date: editDate,
+    };
+    if (onUpdateItem) {
+      onUpdateItem(updatedItem);
+    }
+    setSelectedItemForPreview(updatedItem);
+    setIsEditing(false);
+  };
+
+  // Download absolutely all data (Videos, Tasks, Channels) in a structured CSV format
+  const handleDownloadCSV = () => {
+    const csvParts: string[] = [];
+
+    // --- SECTION 1: YOUTUBE CHANNELS ---
+    csvParts.push('=== SECTION 1: YOUTUBE CHANNELS ===');
+    csvParts.push('Channel ID,Channel Name,Channel Handle,Avatar Color');
+    channels.forEach(chan => {
+      const id = (chan.id || '').replace(/"/g, '""');
+      const name = (chan.name || '').replace(/"/g, '""');
+      const handle = (chan.handle || '').replace(/"/g, '""');
+      const color = (chan.avatarColor || '').replace(/"/g, '""');
+      csvParts.push(`"${id}","${name}","${handle}","${color}"`);
+    });
+
+    csvParts.push(''); // Empty row divider
+    csvParts.push(''); // Empty row divider
+
+    // --- SECTION 2: VIDEO SCHEDULER & CONTENT PLANS ---
+    csvParts.push('=== SECTION 2: ALL VIDEO CONTENT PLANS & STRATEGIES ===');
+    csvParts.push('Video ID,Video Title,Channel Name,Scheduled Date,Status,Description,Notes,Thumbnail URL');
+    items.forEach(item => {
+      const channel = channels.find(c => c.id === item.channelId);
+      const channelName = channel ? channel.name : 'Unknown Channel';
+      
+      const id = (item.id || '').replace(/"/g, '""');
+      const title = (item.title || '').replace(/"/g, '""');
+      const date = (item.date || '').replace(/"/g, '""');
+      const status = (item.status || '').replace(/"/g, '""');
+      const desc = (item.description || '').replace(/"/g, '""');
+      const notes = (item.notes || '').replace(/"/g, '""');
+      const thumb = (item.thumbnail || '').replace(/"/g, '""');
+
+      csvParts.push(`"${id}","${title}","${channelName}","${date}","${status}","${desc}","${notes}","${thumb}"`);
+    });
+
+    csvParts.push(''); // Empty row divider
+    csvParts.push(''); // Empty row divider
+
+    // --- SECTION 3: DAILY PLANNING CHECKLIST (AAJ KA PLAN) ---
+    csvParts.push('=== SECTION 3: DAILY PLANNING CHECKLIST (AAJ KA PLAN) ===');
+    csvParts.push('Task ID,Task Text,Channel Name,Target Date,Completed Status');
+    
+    const tasksToExport = dailyTasks || [];
+    tasksToExport.forEach(task => {
+      const channel = channels.find(c => c.id === task.channelId);
+      const channelName = channel ? channel.name : 'Unknown Channel';
+
+      const id = (task.id || '').replace(/"/g, '""');
+      const text = (task.text || '').replace(/"/g, '""');
+      const date = (task.date || '').replace(/"/g, '""');
+      const status = task.isCompleted ? 'Completed ✅' : 'Pending ⏳';
+
+      csvParts.push(`"${id}","${text}","${channelName}","${date}","${status}"`);
+    });
+
+    const csvContent = csvParts.join('\n');
+    // Indian friendly/global readable filename
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `YouTube_Master_Planner_Complete_Export.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="bg-white border-2 border-slate-950 rounded-2xl p-4 md:p-6 shadow-sm space-y-4">
       {/* Box Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-slate-950 pb-4">
-        <div>
-          <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-            <Video className="w-5 h-5 text-slate-950" />
-            <span>Video</span>
-          </h4>
+        <div className="flex items-center gap-4">
+          <div 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all"
+            title="Click to Collapse or Expand Videos"
+          >
+            <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90">
+              {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
+            </div>
+            <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
+              <Video className="w-5 h-5 text-slate-950 animate-pulse" />
+              <span>Video {isCollapsed ? ' [📁 Collapsed]' : ' [📖 Open]'}</span>
+            </h4>
+          </div>
+          
+          {/* Google Sheets Export Button */}
+          {!isCollapsed && filteredItems.length > 0 && (
+            <button
+              onClick={handleDownloadCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg transition-all active:scale-95 shadow-sm cursor-pointer border border-emerald-800"
+              title="Download structured data CSV to import in Google Sheets"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Google Sheets Download 📊</span>
+            </button>
+          )}
         </div>
 
         {/* Date Range Selector Tab */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border-2 border-slate-950 shrink-0">
-          <button
-            onClick={() => setRangeMode('selected')}
-            className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
-              rangeMode === 'selected'
-                ? 'bg-slate-950 text-white'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Selected Date
-          </button>
-          <button
-            onClick={() => setRangeMode('week')}
-            className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
-              rangeMode === 'week'
-                ? 'bg-slate-950 text-white'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            7 Days Range
-          </button>
-          <button
-            onClick={() => setRangeMode('month')}
-            className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
-              rangeMode === 'month'
-                ? 'bg-slate-950 text-white'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            This Month
-          </button>
-          <button
-            onClick={() => setRangeMode('all')}
-            className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
-              rangeMode === 'all'
-                ? 'bg-slate-950 text-white'
-                : 'text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            All Videos
-          </button>
-        </div>
+        {!isCollapsed && (
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border-2 border-slate-950 shrink-0">
+            <button
+              onClick={() => setRangeMode('selected')}
+              className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                rangeMode === 'selected'
+                  ? 'bg-slate-950 text-white'
+                  : 'text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Selected Date
+            </button>
+            <button
+              onClick={() => setRangeMode('week')}
+              className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                rangeMode === 'week'
+                  ? 'bg-slate-950 text-white'
+                  : 'text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              7 Days Range
+            </button>
+            <button
+              onClick={() => setRangeMode('month')}
+              className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                rangeMode === 'month'
+                  ? 'bg-slate-950 text-white'
+                  : 'text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setRangeMode('all')}
+              className={`px-3 py-1 text-[10px] md:text-xs font-black rounded-lg transition-all cursor-pointer ${
+                rangeMode === 'all'
+                  ? 'bg-slate-950 text-white'
+                  : 'text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              All Videos
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Horizontal Line List / Table Grid */}
-      <div className="overflow-x-auto">
+      {!isCollapsed && (
+        <>
+          <div className="overflow-x-auto">
         <div className="min-w-[640px] divide-y divide-slate-200">
           
           {/* Table Header Row */}
@@ -210,7 +368,7 @@ export default function DateRangeContentList({
                 return (
                   <div
                     key={item.id}
-                    onClick={() => onSelectDate(item.date)}
+                    onClick={() => handleSelectForPreview(item)}
                     className={`grid grid-cols-12 gap-4 items-center p-3 rounded-xl border-2 transition-all cursor-pointer hover:bg-slate-50 hover:translate-x-0.5 ${
                       isSelectedDay
                         ? 'border-slate-950 bg-slate-100/50 shadow-xs'
@@ -265,7 +423,7 @@ export default function DateRangeContentList({
                       <span>{formatFriendlyDate(item.date)}</span>
                     </div>
 
-                    {/* Column 4: Current Status (Published, Scheduled, etc.) */}
+                    {/* Column 4: Current Status */}
                     <div className="col-span-2 text-right">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black rounded-md border-2 border-slate-950 shadow-xs ${badge.bg}`}>
                         {badge.label}
@@ -280,6 +438,316 @@ export default function DateRangeContentList({
 
         </div>
       </div>
+
+      {/* VIDEO PREVIEW & EDIT POPUP MODAL */}
+      <AnimatePresence>
+        {selectedItemForPreview && (() => {
+          const currentChannel = getChannelDetails(selectedItemForPreview.channelId);
+          const badge = getStatusBadge(selectedItemForPreview.status);
+          
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+              {/* Backdrop Click */}
+              <div 
+                className="absolute inset-0" 
+                onClick={() => setSelectedItemForPreview(null)} 
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="bg-white rounded-2xl shadow-xl border-2 border-slate-950 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] z-10"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="bg-slate-50 px-5 py-4 border-b-2 border-slate-950 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-slate-100 text-slate-900 rounded-xl border border-slate-950">
+                      <Video className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                        {isEditing ? '🔴 Editing Mode' : 'Video Details Preview'}
+                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full border border-slate-950" 
+                          style={{ backgroundColor: currentChannel.color }} 
+                        />
+                        <span className="text-xs font-black text-slate-950">
+                          {currentChannel.name}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {/* Pencil Edit Icon/Button */}
+                    {!isEditing && (
+                      <button
+                        onClick={() => setIsEditing(true)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-950 text-xs font-black rounded-lg border-2 border-slate-950 transition-all active:scale-95 cursor-pointer"
+                        title="Edit details"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Edit Details</span>
+                      </button>
+                    )}
+                    
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItemForPreview(null)}
+                      className="p-1.5 text-slate-600 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all cursor-pointer border border-slate-950"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Body Content */}
+                <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                  
+                  {isEditing ? (
+                    /* EDITING VIEW FORM */
+                    <div className="space-y-4">
+                      
+                      {/* Edit Channel (Edit Channel Name option) */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Select YouTube Channel:
+                        </label>
+                        <select
+                          value={editChannelId}
+                          onChange={(e) => setEditChannelId(e.target.value)}
+                          className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-black text-slate-800 transition-all cursor-pointer"
+                        >
+                          {channels.map((chan) => (
+                            <option key={chan.id} value={chan.id}>
+                              {chan.name} ({chan.handle})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400 font-semibold italic">
+                          💡 Aap select list se kisi bhi doosre channel par is video ko assign kar sakte hain.
+                        </p>
+                      </div>
+
+                      {/* Edit Title */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Video Title:
+                        </label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          placeholder="Video ka title likhein..."
+                          className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-semibold text-slate-800 transition-all"
+                        />
+                      </div>
+
+                      {/* Grid Row: Date and Status */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Scheduled Date:
+                          </label>
+                          <input
+                            type="date"
+                            value={editDate}
+                            onChange={(e) => setEditDate(e.target.value)}
+                            className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-bold text-slate-800 transition-all"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Video Status:
+                          </label>
+                          <select
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value as ContentScheduleItem['status'])}
+                            className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-black text-slate-800 transition-all cursor-pointer"
+                          >
+                            <option value="Researching">💡 Researching</option>
+                            <option value="Scripting">📝 Scripting</option>
+                            <option value="Recording">🎥 Recording</option>
+                            <option value="Editing">✂️ Editing</option>
+                            <option value="Scheduled">📅 Scheduled</option>
+                            <option value="Published">🚀 Published</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Edit Thumbnail URL */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Thumbnail Image URL:
+                        </label>
+                        <input
+                          type="url"
+                          value={editThumbnail}
+                          onChange={(e) => setEditThumbnail(e.target.value)}
+                          placeholder="Ex: https://images.unsplash.com/... (optional)"
+                          className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-semibold text-slate-800 transition-all"
+                        />
+                      </div>
+
+                      {/* Edit Description */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Description & Script Outline:
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          placeholder="Video script outline ya description details likhein..."
+                          className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-semibold text-slate-800 transition-all leading-relaxed"
+                        />
+                      </div>
+
+                      {/* Edit Notes */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Quick Sticky Notes:
+                        </label>
+                        <input
+                          type="text"
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          placeholder="Quick reminders, URLs, references..."
+                          className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-bold text-slate-800 transition-all"
+                        />
+                      </div>
+
+                    </div>
+                  ) : (
+                    /* STATIC DETAILS VIEW */
+                    <div className="space-y-4">
+                      
+                      {/* Thumbnail and Title */}
+                      <div className="space-y-3">
+                        {selectedItemForPreview.thumbnail ? (
+                          <div className="w-full rounded-xl overflow-hidden border-2 border-slate-950 shadow-sm aspect-[16/9] bg-slate-950">
+                            <img
+                              src={selectedItemForPreview.thumbnail}
+                              alt={selectedItemForPreview.title}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-full rounded-xl border-2 border-dashed border-slate-950 aspect-[16/9] bg-slate-50 flex flex-col items-center justify-center text-slate-500 gap-2">
+                            <Play className="w-8 h-8 text-slate-950" />
+                            <span className="text-xs font-bold">No Thumbnail Available</span>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Video Title
+                          </span>
+                          <h3 className="text-sm md:text-base font-black text-slate-950 leading-snug">
+                            {selectedItemForPreview.title || 'Untitled Strategy'}
+                          </h3>
+                        </div>
+                      </div>
+
+                      <hr className="border-t-2 border-slate-100" />
+
+                      {/* Metadata Row */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Schedule Date
+                          </span>
+                          <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <CalendarDays className="w-4 h-4 text-slate-700" />
+                            <span>{formatFriendlyDate(selectedItemForPreview.date)}</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Current Status
+                          </span>
+                          <div>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-black rounded-lg border-2 border-slate-950 shadow-xs ${badge.bg}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <hr className="border-t-2 border-slate-100" />
+
+                      {/* Description / Content Details */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                          Description & Script Outline
+                        </span>
+                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-950 text-xs font-semibold text-slate-800 whitespace-pre-wrap leading-relaxed max-h-[160px] overflow-y-auto">
+                          {selectedItemForPreview.description || 'Is video ke liye koi description nahi likha gaya hai.'}
+                        </div>
+                      </div>
+
+                      {/* Micro-notes if present */}
+                      {selectedItemForPreview.notes && (
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Extra Quick Notes
+                          </span>
+                          <div className="p-3 bg-amber-50/50 rounded-xl border-2 border-slate-950 text-xs font-bold text-slate-700 italic">
+                            📌 {selectedItemForPreview.notes}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Footer Action */}
+                <div className="bg-slate-50 px-5 py-3 border-t-2 border-slate-950 flex justify-end gap-2.5">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-950 text-xs font-black rounded-xl border-2 border-slate-950 cursor-pointer active:scale-95 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveEdit}
+                        className="flex items-center gap-1.5 px-5 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl border border-slate-950 cursor-pointer active:scale-95 transition-all shadow-sm"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>Save Changes</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItemForPreview(null)}
+                      className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl border border-slate-950 cursor-pointer active:scale-95 transition-all"
+                    >
+                      Close Preview
+                    </button>
+                  )}
+                </div>
+
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+        </>
+      )}
 
     </div>
   );

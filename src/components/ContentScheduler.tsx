@@ -10,7 +10,9 @@ import {
   UploadCloud, 
   Clock,
   Youtube,
-  Sparkles
+  Sparkles,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ContentScheduleItem } from '../types';
 
@@ -46,6 +48,7 @@ export default function ContentScheduler({
   onUpdateItem,
 }: ContentSchedulerProps) {
   // Form input state for scheduling (Add only)
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [thumbnail, setThumbnail] = useState<string>('');
   const [title, setTitle] = useState<string>('');
   const [description, setDescription] = useState<string>('');
@@ -236,8 +239,35 @@ export default function ContentScheduler({
   return (
     <div className="space-y-6" id="scheduler-form-section">
       
-      {/* DOUBLE PANEL GRID (VIDEO DETAILS LEFT & SCHEDULER FORM RIGHT) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Dynamic unified header block for details scheduler */}
+      <div className="bg-slate-900 border-2 border-slate-950 rounded-2xl p-4 md:px-6 md:py-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer select-none"
+          title="Click to Collapse or Expand Scheduler & Details"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-slate-800 border border-slate-700 rounded-lg flex items-center justify-center transition-all active:scale-90">
+              {isCollapsed ? <ChevronDown className="w-4 h-4 text-white" /> : <ChevronUp className="w-4 h-4 text-white" />}
+            </div>
+            <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl">
+              <Youtube className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-1.5">
+                <span>Video Strategy & Scheduler</span>
+                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-700">
+                  {isCollapsed ? 'Collapsed' : 'Open'}
+                </span>
+              </h3>
+              <p className="text-[10px] md:text-xs text-slate-400 font-medium">Create and manage content plans for <span className="text-rose-400 font-bold">{channelName}</span> on {selectedDate}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {!isCollapsed && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* PANEL A: SELECTED DATE VIDEO STRATEGY LIST */}
         <div className="bg-white border-2 border-slate-950 rounded-2xl p-4 md:p-6 shadow-xs flex flex-col justify-between">
@@ -484,6 +514,7 @@ export default function ContentScheduler({
         </div>
 
       </div>
+      )}
 
       {/* EDIT MODAL DIALOG (FIX: Pencil edit icon now launches this highly interactive full-screen popup) */}
       <AnimatePresence>

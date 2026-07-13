@@ -553,6 +553,16 @@ export default function App() {
             items={contentItems}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
+            dailyTasks={dailyTasks}
+            onUpdateItem={async (updatedItem) => {
+              try {
+                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                triggerToast("Video details updated!");
+              } catch (err) {
+                console.error(err);
+                triggerToast("Failed to update details", "error");
+              }
+            }}
           />
         </section>
 

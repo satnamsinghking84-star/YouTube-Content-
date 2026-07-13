@@ -7,7 +7,9 @@ import {
   CheckCircle2, 
   Sparkles,
   CalendarDays,
-  X
+  X,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { DailyPlanningTask, YouTubeChannel } from '../types';
 
@@ -41,6 +43,7 @@ export default function DailyPlan({
   const [customTaskText, setCustomTaskText] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedChannelIdForNewTask, setSelectedChannelIdForNewTask] = useState(channelId);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Keep selected channel synchronized with active channel
   useEffect(() => {
@@ -110,19 +113,28 @@ export default function DailyPlan({
         {/* Header with Progress Tracker */}
         <div className="border-b-2 border-slate-950 pb-3 space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-                <ListTodo className="w-5 h-5 text-slate-950" />
-                <span>Aaj Ka Plan</span>
-                <span className="text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
-                  Daily Checklist
-                </span>
-              </h4>
-              <p className="text-[11px] md:text-xs text-slate-600 font-semibold flex items-center gap-1.5 mt-1">
-                <CalendarDays className="w-3.5 h-3.5 text-slate-700" />
-                <span>Target Date: </span>
-                <span className="text-slate-950 font-bold">{formatFriendlyDate(selectedDate)}</span>
-              </p>
+            <div 
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all flex-1"
+              title="Click to Collapse or Expand Aaj Ka Plan"
+            >
+              <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90">
+                {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
+                  <ListTodo className="w-5 h-5 text-slate-950" />
+                  <span>Aaj Ka Plan</span>
+                  <span className="text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
+                    Daily Checklist {isCollapsed ? ' [📁 Collapsed]' : ' [📖 Open]'}
+                  </span>
+                </h4>
+                <p className="text-[11px] md:text-xs text-slate-600 font-semibold flex items-center gap-1.5 mt-1">
+                  <CalendarDays className="w-3.5 h-3.5 text-slate-700" />
+                  <span>Target Date: </span>
+                  <span className="text-slate-950 font-bold">{formatFriendlyDate(selectedDate)}</span>
+                </p>
+              </div>
             </div>
             
             <div className="flex items-center gap-2 shrink-0">
@@ -140,7 +152,7 @@ export default function DailyPlan({
           </div>
 
           {/* Progress Bar */}
-          {totalTasksCount > 0 && (
+          {!isCollapsed && totalTasksCount > 0 && (
             <div className="space-y-1 pt-1">
               <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
                 <span>Task Completion Progress</span>
@@ -156,113 +168,123 @@ export default function DailyPlan({
           )}
         </div>
 
-        {/* Task List Container - Grouped by Channel */}
-        <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
-          {selectedDateTasks.length === 0 ? (
-            <div className="py-10 text-center text-slate-500 text-xs font-bold border-2 border-dashed border-slate-950 rounded-2xl bg-slate-50/50 px-4">
-              <ListTodo className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              Is date ke liye kisi bhi channel par koi task nahi hai.
+        {/* Collapsible Content */}
+        {!isCollapsed && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="space-y-4"
+          >
+            {/* Task List Container - Grouped by Channel */}
+            <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
+              {selectedDateTasks.length === 0 ? (
+                <div className="py-10 text-center text-slate-500 text-xs font-bold border-2 border-dashed border-slate-950 rounded-2xl bg-slate-50/50 px-4">
+                  <ListTodo className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                  Is date ke liye kisi bhi channel par koi task nahi hai.
+                  <button
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="mt-3 mx-auto flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm cursor-pointer border border-slate-950"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Naya Task Add Karein</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {channels.map((channel) => {
+                    const channelTasks = selectedDateTasks.filter(t => t.channelId === channel.id);
+                    // Sort channel tasks: pending tasks (isCompleted === false) first!
+                    const sortedTasks = [...channelTasks].sort((a, b) => {
+                      if (a.isCompleted === b.isCompleted) return 0;
+                      return a.isCompleted ? 1 : -1; // false comes before true
+                    });
+
+                    return (
+                      <div key={channel.id} className="border-2 border-slate-950 rounded-xl p-3 bg-slate-50/30 space-y-2 flex flex-col justify-between">
+                        <div>
+                          {/* Channel Group Header */}
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-950 mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <span 
+                                className="w-3 h-3 rounded-full border border-slate-950" 
+                                style={{ backgroundColor: channel.avatarColor }} 
+                              />
+                              <span className="text-xs font-black text-slate-950 truncate max-w-[140px] md:max-w-xs">{channel.name}</span>
+                            </div>
+                            <span className="text-[9px] font-black text-slate-900 bg-white border border-slate-950 px-1.5 py-0.5 rounded-md">
+                              {channelTasks.filter(t => t.isCompleted).length}/{channelTasks.length} Done
+                            </span>
+                          </div>
+
+                          {/* Channel Tasks */}
+                          <div className="space-y-2">
+                            {sortedTasks.length === 0 ? (
+                              <p className="text-[10px] text-slate-400 font-semibold italic py-4 text-center">
+                                Is channel ke liye koi task nahi hai.
+                              </p>
+                            ) : (
+                              <AnimatePresence initial={false}>
+                                {sortedTasks.map((task) => (
+                                  <motion.div 
+                                    key={task.id}
+                                    initial={{ opacity: 0, y: 5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, x: -10 }}
+                                    className={`flex items-center justify-between gap-2.5 p-2.5 rounded-lg border border-slate-950 transition-all ${
+                                      task.isCompleted 
+                                        ? 'bg-slate-100 text-slate-400 line-through' 
+                                        : 'bg-white text-slate-800 shadow-sm hover:translate-x-0.5'
+                                    }`}
+                                  >
+                                    <button
+                                      onClick={() => onToggleTask(task.id)}
+                                      className="flex items-start gap-2.5 text-left flex-1 font-bold text-xs cursor-pointer"
+                                    >
+                                      {task.isCompleted ? (
+                                        <CheckCircle2 className="w-5 h-5 text-slate-950 shrink-0 mt-0.5" />
+                                      ) : (
+                                        <div className="w-5 h-5 rounded border-2 border-slate-950 hover:bg-slate-100 shrink-0 mt-0.5 transition-colors bg-white" />
+                                      )}
+                                      <div className="flex flex-col">
+                                        <span className="leading-snug">{task.text}</span>
+                                        <span className="text-[9px] text-slate-500 font-black tracking-wide mt-1">
+                                          📺 {channel.name}
+                                        </span>
+                                      </div>
+                                    </button>
+                                    <button
+                                      onClick={() => onDeleteTask(task.id)}
+                                      className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-all cursor-pointer shrink-0"
+                                      title="Delete task"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </motion.div>
+                                ))}
+                              </AnimatePresence>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Naya Task Add Button at the bottom as secondary trigger */}
+            <div className="border-t-2 border-slate-950 pt-3">
               <button
                 onClick={() => setIsAddModalOpen(true)}
-                className="mt-3 mx-auto flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm cursor-pointer border border-slate-950"
+                className="w-full py-2.5 border-2 border-dashed border-slate-950 hover:bg-slate-50 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4 text-slate-950" />
                 <span>Naya Task Add Karein</span>
               </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {channels.map((channel) => {
-                const channelTasks = selectedDateTasks.filter(t => t.channelId === channel.id);
-                // Sort channel tasks: pending tasks (isCompleted === false) first!
-                const sortedTasks = [...channelTasks].sort((a, b) => {
-                  if (a.isCompleted === b.isCompleted) return 0;
-                  return a.isCompleted ? 1 : -1; // false comes before true
-                });
-
-                return (
-                  <div key={channel.id} className="border-2 border-slate-950 rounded-xl p-3 bg-slate-50/30 space-y-2 flex flex-col justify-between">
-                    <div>
-                      {/* Channel Group Header */}
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-950 mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <span 
-                            className="w-3 h-3 rounded-full border border-slate-950" 
-                            style={{ backgroundColor: channel.avatarColor }} 
-                          />
-                          <span className="text-xs font-black text-slate-950 truncate max-w-[140px] md:max-w-xs">{channel.name}</span>
-                        </div>
-                        <span className="text-[9px] font-black text-slate-900 bg-white border border-slate-950 px-1.5 py-0.5 rounded-md">
-                          {channelTasks.filter(t => t.isCompleted).length}/{channelTasks.length} Done
-                        </span>
-                      </div>
-
-                      {/* Channel Tasks */}
-                      <div className="space-y-2">
-                        {sortedTasks.length === 0 ? (
-                          <p className="text-[10px] text-slate-400 font-semibold italic py-4 text-center">
-                            Is channel ke liye koi task nahi hai.
-                          </p>
-                        ) : (
-                          <AnimatePresence initial={false}>
-                            {sortedTasks.map((task) => (
-                              <motion.div 
-                                key={task.id}
-                                initial={{ opacity: 0, y: 5 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className={`flex items-center justify-between gap-2.5 p-2.5 rounded-lg border border-slate-950 transition-all ${
-                                  task.isCompleted 
-                                    ? 'bg-slate-100 text-slate-400 line-through' 
-                                    : 'bg-white text-slate-800 shadow-sm hover:translate-x-0.5'
-                                }`}
-                              >
-                                <button
-                                  onClick={() => onToggleTask(task.id)}
-                                  className="flex items-start gap-2.5 text-left flex-1 font-bold text-xs cursor-pointer"
-                                >
-                                  {task.isCompleted ? (
-                                    <CheckCircle2 className="w-5 h-5 text-slate-950 shrink-0 mt-0.5" />
-                                  ) : (
-                                    <div className="w-5 h-5 rounded border-2 border-slate-950 hover:bg-slate-100 shrink-0 mt-0.5 transition-colors bg-white" />
-                                  )}
-                                  <div className="flex flex-col">
-                                    <span className="leading-snug">{task.text}</span>
-                                    <span className="text-[9px] text-slate-500 font-black tracking-wide mt-1">
-                                      📺 {channel.name}
-                                    </span>
-                                  </div>
-                                </button>
-                                <button
-                                  onClick={() => onDeleteTask(task.id)}
-                                  className="text-slate-400 hover:text-rose-600 p-1 rounded-md hover:bg-rose-50 transition-all cursor-pointer shrink-0"
-                                  title="Delete task"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Naya Task Add Button at the bottom as secondary trigger */}
-        <div className="border-t-2 border-slate-950 pt-3">
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="w-full py-2.5 border-2 border-dashed border-slate-950 hover:bg-slate-50 text-slate-950 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-slate-950" />
-            <span>Naya Task Add Karein</span>
-          </button>
-        </div>
+          </motion.div>
+        )}
 
       </div>
 

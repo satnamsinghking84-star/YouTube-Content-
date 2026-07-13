@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Eye, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Eye, Layers, ChevronDown, ChevronUp } from 'lucide-react';
 import { ContentScheduleItem, DailyPlanningTask } from '../types';
 
 interface ContentCalendarProps {
@@ -28,6 +28,7 @@ export default function ContentCalendar({
 }: ContentCalendarProps) {
   // Calendar mode: 'month' or 'week' (extremely good for mobile screens)
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Default date aligned with July 13, 2026 or current active state
   const [currentDate, setCurrentDate] = useState<Date>(() => {
@@ -212,14 +213,24 @@ export default function ContentCalendar({
       
       {/* Premium Header */}
       <div className="bg-slate-50/80 px-4 md:px-6 py-4 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+        <div 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer hover:bg-slate-100 p-1.5 rounded-xl select-none transition-all"
+          title="Click to Collapse or Expand Calendar"
+        >
           <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90 animate-pulse">
+              {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
+            </div>
             <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
               <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-800 text-sm md:text-base">
-                {MONTHS[month]} {year}
+              <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center gap-1.5">
+                <span>{MONTHS[month]} {year}</span>
+                <span className="text-[10px] bg-slate-200 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
+                  {isCollapsed ? 'Collapsed' : 'Open'}
+                </span>
               </h3>
               <p className="text-[10px] md:text-xs text-slate-500 font-medium">Video Schedules & Strategy Planner</p>
             </div>
@@ -233,7 +244,8 @@ export default function ContentCalendar({
         </div>
 
         {/* Calendar controls & toggles */}
-        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+        {!isCollapsed && (
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
           
           {/* View Mode Toggle Switch */}
           <div className="bg-slate-100 p-0.5 rounded-xl border border-slate-200/60 flex items-center">
@@ -286,10 +298,13 @@ export default function ContentCalendar({
             </div>
           </div>
 
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Weekday indicator labels */}
+      {!isCollapsed && (
+        <>
+          {/* Weekday indicator labels */}
       <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/30 text-center text-[10px] md:text-[11px] font-bold text-slate-400 py-2.5">
         {WEEKDAYS.map(day => (
           <div key={day} className="tracking-wider uppercase">{day}</div>
@@ -421,6 +436,8 @@ export default function ContentCalendar({
         </div>
       </div>
 
+        </>
+      )}
     </div>
   );
 }
