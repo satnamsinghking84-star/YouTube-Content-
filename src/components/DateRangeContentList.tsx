@@ -130,14 +130,8 @@ export default function DateRangeContentList({
         <div>
           <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
             <Video className="w-5 h-5 text-slate-950" />
-            <span>Content Schedule Board</span>
-            <span className="text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
-              Horizontal Line-View
-            </span>
+            <span>Video</span>
           </h4>
-          <p className="text-[11px] md:text-xs text-slate-600 font-semibold mt-1">
-            Chuninda date range ke video videos ki direct horizontal details list
-          </p>
         </div>
 
         {/* Date Range Selector Tab */}
