@@ -1,0 +1,46 @@
+{
+  "name": "YouTube Creator Strategist",
+  "short_name": "YT Strategist",
+  "description": "Daily content planner and execution companion for YouTube Creators.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#faf9f6",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/app-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily Goals",
+      "short_name": "Daily Goals",
+      "description": "Check and manage today's task checklist",
+      "url": "/?shortcut=tasks",
+      "icons": [{ "src": "/app-icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Content Calendar",
+      "short_name": "Calendar",
+      "description": "View content schedule and calendar",
+      "url": "/?shortcut=calendar",
+      "icons": [{ "src": "/app-icon.svg", "sizes": "any" }]
+    }
+  ]
+}

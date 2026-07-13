@@ -17,6 +17,7 @@ import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types'
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
+import WidgetsBoard from './components/WidgetsBoard';
 import { 
   collection, 
   onSnapshot, 
@@ -516,6 +517,36 @@ export default function App() {
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
             onDeleteTask={handleDeleteTask}
+          />
+        </section>
+
+        {/* MOBILE HOME SCREEN & WIDGET PREVIEW SECTION */}
+        <section className="space-y-3">
+          <WidgetsBoard
+            channelId={activeChannelId}
+            channelName={activeChannel?.name || 'My Channel'}
+            dailyTasks={dailyTasks}
+            contentItems={contentItems}
+            onAddTask={handleAddTask}
+            onToggleTask={handleToggleTask}
+            onAddContentItem={async (item) => {
+              try {
+                await setDoc(doc(db, 'content_items', item.id), item);
+                triggerToast(`"${item.title}" saved to video ideas database!`, 'success');
+              } catch (err) {
+                console.error(err);
+                triggerToast("Widget se idea save nahi ho paya.", "error");
+              }
+            }}
+            onUpdateContentItem={async (updatedItem) => {
+              try {
+                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                triggerToast(`Status updated to "${updatedItem.status}"!`, 'info');
+              } catch (err) {
+                console.error(err);
+                triggerToast("Widget update failed.", "error");
+              }
+            }}
           />
         </section>
 
