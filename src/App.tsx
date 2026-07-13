@@ -17,6 +17,7 @@ import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types'
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
+import DateRangeContentList from './components/DateRangeContentList';
 import { 
   collection, 
   onSnapshot, 
@@ -542,6 +543,16 @@ export default function App() {
                 el.scrollIntoView({ behavior: 'smooth' });
               }
             }}
+          />
+        </section>
+
+        {/* DATE RANGE CONTENT LIST SECTION (Calender ke niche horizontal rows board) */}
+        <section className="space-y-3">
+          <DateRangeContentList
+            channels={channels}
+            items={contentItems}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
           />
         </section>
 
