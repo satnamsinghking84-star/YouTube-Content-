@@ -13,7 +13,8 @@ import {
   Clock,
   Edit2,
   Save,
-  Check
+  Check,
+  Copy
 } from 'lucide-react';
 import { DailyPlanningTask, YouTubeChannel, ContentScheduleItem } from '../types';
 
@@ -186,6 +187,27 @@ export default function DailyPlan({
   }, [channelId]);
 
   const [selectedDetailVideo, setSelectedDetailVideo] = useState<ContentScheduleItem | null>(null);
+  const [copiedTitle, setCopiedTitle] = useState(false);
+  const [copiedDescription, setCopiedDescription] = useState(false);
+  const [copiedNotes, setCopiedNotes] = useState(false);
+
+  const handleCopyText = async (text: string, type: 'title' | 'description' | 'notes') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (type === 'title') {
+        setCopiedTitle(true);
+        setTimeout(() => setCopiedTitle(false), 2000);
+      } else if (type === 'description') {
+        setCopiedDescription(true);
+        setTimeout(() => setCopiedDescription(false), 2000);
+      } else if (type === 'notes') {
+        setCopiedNotes(true);
+        setTimeout(() => setCopiedNotes(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
 
   // Filter tasks for the selected date (across ALL channels)
   const selectedDateTasks = dailyTasks.filter(
@@ -1115,8 +1137,31 @@ export default function DailyPlan({
 
                 {/* Title */}
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Video Title</span>
-                  <h4 className="font-black text-slate-950 text-sm md:text-base leading-snug">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Video Title</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyText(selectedDetailVideo.title, 'title')}
+                      className={`text-[9px] font-black uppercase px-2 py-1 rounded border-2 border-slate-950 flex items-center gap-1 cursor-pointer transition-all ${
+                        copiedTitle 
+                          ? 'bg-emerald-500 text-white border-emerald-600' 
+                          : 'bg-white text-slate-800 hover:bg-slate-100 shadow-3xs'
+                      }`}
+                    >
+                      {copiedTitle ? (
+                        <>
+                          <Check className="w-2.5 h-2.5" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-2.5 h-2.5" />
+                          <span>Copy Title</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <h4 className="font-black text-slate-950 text-sm md:text-base leading-snug p-3 bg-slate-50 border border-slate-200 rounded-xl">
                     {selectedDetailVideo.title}
                   </h4>
                 </div>
@@ -1147,7 +1192,30 @@ export default function DailyPlan({
                 {/* Description */}
                 {selectedDetailVideo.description && (
                   <div className="space-y-1">
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Description</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Description</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(selectedDetailVideo.description!, 'description')}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded border-2 border-slate-950 flex items-center gap-1 cursor-pointer transition-all ${
+                          copiedDescription 
+                            ? 'bg-emerald-500 text-white border-emerald-600' 
+                            : 'bg-white text-slate-800 hover:bg-slate-100 shadow-3xs'
+                        }`}
+                      >
+                        {copiedDescription ? (
+                          <>
+                            <Check className="w-2.5 h-2.5" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-2.5 h-2.5" />
+                            <span>Copy Desc</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 font-bold text-xs text-slate-700 leading-relaxed max-h-24 overflow-y-auto whitespace-pre-wrap">
                       {selectedDetailVideo.description}
                     </div>
@@ -1157,7 +1225,30 @@ export default function DailyPlan({
                 {/* Production Notes / Strategy */}
                 {selectedDetailVideo.notes && (
                   <div className="space-y-1">
-                    <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Production Notes & Scripting Ideas</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Production Notes & Scripting Ideas</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(selectedDetailVideo.notes!, 'notes')}
+                        className={`text-[9px] font-black uppercase px-2 py-1 rounded border-2 border-slate-950 flex items-center gap-1 cursor-pointer transition-all ${
+                          copiedNotes 
+                            ? 'bg-emerald-500 text-white border-emerald-600' 
+                            : 'bg-white text-slate-800 hover:bg-slate-100 shadow-3xs'
+                        }`}
+                      >
+                        {copiedNotes ? (
+                          <>
+                            <Check className="w-2.5 h-2.5" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-2.5 h-2.5" />
+                            <span>Copy Notes</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 font-bold text-xs text-indigo-950 leading-relaxed max-h-24 overflow-y-auto whitespace-pre-wrap">
                       💡 {selectedDetailVideo.notes}
                     </div>
