@@ -343,22 +343,24 @@ export default function DailyPlan({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div 
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all flex-1"
+              className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all flex-1 min-w-0"
               title="Click to Collapse or Expand Aaj Ka Plan"
             >
-              <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90">
+              <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90 shrink-0">
                 {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
               </div>
-              <div>
-                <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-                  <ListTodo className="w-5 h-5 text-slate-950" />
-                  <span>Aaj Ka Plan</span>
-                  <span className="text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
-                    Daily Checklist {isCollapsed ? ' [📁 Collapsed]' : ' [📖 Open]'}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <h4 className="text-sm md:text-base font-black text-slate-950 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                    <ListTodo className="w-4 h-4 md:w-5 md:h-5 text-slate-950" />
+                    <span>Aaj Ka Plan</span>
+                  </h4>
+                  <span className="text-[9px] md:text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-extrabold tracking-wider border border-slate-950 whitespace-nowrap">
+                    {isCollapsed ? 'Closed' : 'Active'}
                   </span>
-                </h4>
-                <p className="text-[11px] md:text-xs text-slate-600 font-semibold flex items-center gap-1.5 mt-1">
-                  <CalendarDays className="w-3.5 h-3.5 text-slate-700" />
+                </div>
+                <p className="text-[11px] md:text-xs text-slate-600 font-semibold flex items-center gap-1.5 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
+                  <CalendarDays className="w-3.5 h-3.5 text-slate-700 shrink-0" />
                   <span>Target Date: </span>
                   <span className="text-slate-950 font-bold">{formatFriendlyDate(selectedDate)}</span>
                 </p>

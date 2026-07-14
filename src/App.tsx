@@ -101,6 +101,22 @@ export default function App() {
   const [newChannelHandle, setNewChannelHandle] = useState('');
   const [selectedAvatarColor, setSelectedAvatarColor] = useState(PRESET_AVATAR_COLORS[0]);
 
+  // --- Channel Edit States ---
+  const [showEditChannelModal, setShowEditChannelModal] = useState(false);
+  const [editChannelName, setEditChannelName] = useState('');
+  const [editChannelHandle, setEditChannelHandle] = useState('');
+  const [editSelectedAvatarColor, setEditSelectedAvatarColor] = useState(PRESET_AVATAR_COLORS[0]);
+  const [channelToDelete, setChannelToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const openEditChannelModal = () => {
+    if (activeChannel) {
+      setEditChannelName(activeChannel.name);
+      setEditChannelHandle(activeChannel.handle);
+      setEditSelectedAvatarColor(activeChannel.avatarColor);
+      setShowEditChannelModal(true);
+    }
+  };
+
   // Alert & Notification toast states
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -270,37 +286,74 @@ export default function App() {
     }
   };
 
-  const handleDeleteChannel = async (id: string, name: string) => {
+  const handleDeleteChannel = (id: string, name: string) => {
+    if (channels.length <= 1) {
+      triggerToast("Workspace ke liye kam se kam 1 channel hona zaroori hai! (At least one channel is required)", 'error');
+      return;
+    }
+    setChannelToDelete({ id, name });
+  };
+
+  const confirmDeleteChannel = async () => {
+    if (!channelToDelete) return;
+    const { id, name } = channelToDelete;
+
     if (channels.length <= 1) {
       triggerToast("At least one active channel is required!", 'error');
+      setChannelToDelete(null);
       return;
     }
 
-    if (window.confirm(`Are you sure you want to delete "${name}"? This will erase all its video strategies.`)) {
-      try {
-        await deleteDoc(doc(db, 'channels', id));
-        
-        // Batch delete content items and daily tasks belonging to this channel
-        const batch = writeBatch(db);
-        contentItems.filter(item => item.channelId === id).forEach(item => {
-          batch.delete(doc(db, 'content_items', item.id));
-        });
-        dailyTasks.filter(task => task.channelId === id).forEach(task => {
-          batch.delete(doc(db, 'daily_tasks', task.id));
-        });
-        await batch.commit();
+    try {
+      await deleteDoc(doc(db, 'channels', id));
+      
+      // Batch delete content items and daily tasks belonging to this channel
+      const batch = writeBatch(db);
+      contentItems.filter(item => item.channelId === id).forEach(item => {
+        batch.delete(doc(db, 'content_items', item.id));
+      });
+      dailyTasks.filter(task => task.channelId === id).forEach(task => {
+        batch.delete(doc(db, 'daily_tasks', task.id));
+      });
+      await batch.commit();
 
-        if (activeChannelId === id) {
-          const remaining = channels.filter(c => c.id !== id);
-          if (remaining.length > 0) {
-            setActiveChannelId(remaining[0].id);
-          }
+      if (activeChannelId === id) {
+        const remaining = channels.filter(c => c.id !== id);
+        if (remaining.length > 0) {
+          setActiveChannelId(remaining[0].id);
         }
-        triggerToast(`Removed "${name}" workspace.`);
-      } catch (err) {
-        console.error(err);
-        triggerToast("Failed to delete channel", "error");
       }
+      triggerToast(`Removed "${name}" workspace.`);
+      setChannelToDelete(null);
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to delete channel", "error");
+      setChannelToDelete(null);
+    }
+  };
+
+  const handleUpdateChannel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editChannelName.trim() || !activeChannelId) return;
+
+    const handle = editChannelHandle.trim() 
+      ? (editChannelHandle.startsWith('@') ? editChannelHandle : `@${editChannelHandle}`)
+      : `@${editChannelName.toLowerCase().replace(/\s+/g, '')}`;
+
+    const updatedChan: YouTubeChannel = {
+      id: activeChannelId,
+      name: editChannelName.trim(),
+      handle,
+      avatarColor: editSelectedAvatarColor
+    };
+
+    try {
+      await setDoc(doc(db, 'channels', activeChannelId), updatedChan);
+      setShowEditChannelModal(false);
+      triggerToast(`"${updatedChan.name}" updated successfully!`);
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to update channel", "error");
     }
   };
 
@@ -391,16 +444,25 @@ export default function App() {
               </div>
             </div>
 
-            {/* Delete current channel button if there is > 1 */}
-            {channels.length > 1 && (
+            {/* Edit current channel button */}
+            {activeChannel && (
               <button
-                onClick={() => handleDeleteChannel(activeChannel.id, activeChannel.name)}
-                className="p-2.5 text-slate-400 hover:text-rose-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-rose-50 hover:border-rose-100 transition-all cursor-pointer"
-                title="Delete current channel"
+                onClick={openEditChannelModal}
+                className="p-2.5 text-slate-450 hover:text-indigo-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-indigo-50 hover:border-indigo-100 transition-all cursor-pointer"
+                title="Edit current channel details"
               >
-                <Trash2 className="w-4 h-4" />
+                <Edit3 className="w-4 h-4" />
               </button>
             )}
+
+            {/* Delete current channel button */}
+            <button
+              onClick={() => handleDeleteChannel(activeChannel.id, activeChannel.name)}
+              className="p-2.5 text-slate-400 hover:text-rose-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-rose-50 hover:border-rose-100 transition-all cursor-pointer"
+              title="Delete current channel and all its data"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
 
             {/* Quick Add Channel Action */}
             <button
@@ -500,6 +562,140 @@ export default function App() {
                 </div>
 
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- EDIT CHANNEL OVERLAY MODAL --- */}
+      <AnimatePresence>
+        {showEditChannelModal && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-md w-full overflow-hidden"
+            >
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-2.5">
+                  <Tv className="w-5 h-5 text-indigo-600" />
+                  <h3 className="font-bold text-slate-800 text-sm md:text-base">Edit Channel Settings</h3>
+                </div>
+                <button 
+                  onClick={() => setShowEditChannelModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold text-xs px-2.5 py-1.5 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateChannel} className="p-6 space-y-5">
+                
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Channel Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={editChannelName}
+                    onChange={(e) => setEditChannelName(e.target.value)}
+                    placeholder="Ex: Tech Bytes Hindi, Vlogs etc."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-xs font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Handle Username</label>
+                  <input
+                    type="text"
+                    value={editChannelHandle}
+                    onChange={(e) => setEditChannelHandle(e.target.value)}
+                    placeholder="Ex: @vlogs"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-xs font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Color Label</label>
+                  <div className="grid grid-cols-7 gap-2">
+                    {PRESET_AVATAR_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setEditSelectedAvatarColor(color)}
+                        className={`w-9 h-9 rounded-xl border-2 transition-all cursor-pointer ${
+                          editSelectedAvatarColor === color 
+                            ? 'border-slate-800 scale-105 shadow' 
+                            : 'border-transparent hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4 flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditChannelModal(false)}
+                    className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- CONFIRM DELETE CHANNEL OVERLAY MODAL --- */}
+      <AnimatePresence>
+        {channelToDelete && (
+          <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border-2 border-slate-950 rounded-2xl shadow-xl max-w-md w-full overflow-hidden"
+            >
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center gap-2.5 bg-rose-50 text-rose-950">
+                <AlertCircle className="w-5 h-5 text-rose-650 animate-pulse" />
+                <h3 className="font-black text-sm md:text-base text-rose-900">Channel Delete Karein?</h3>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-xs font-bold text-slate-600 leading-relaxed">
+                  Kya aap sach mein <span className="text-slate-900 font-extrabold">"{channelToDelete.name}"</span> channel ko delete karna chahte hain?
+                </p>
+                <div className="p-3.5 bg-rose-50/50 rounded-xl border border-rose-100 text-rose-950 font-semibold text-[11px] leading-relaxed">
+                  ⚠️ <span className="font-black text-rose-900">Warning:</span> Is channel ko delete karne par isse related sabhi <span className="font-black text-rose-900">video schedules</span> aur <span className="font-black text-rose-900">daily checklist tasks</span> permanently delete ho jayenge! Is action ko wapas nahi kiya ja sakta.
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setChannelToDelete(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-xl transition-all cursor-pointer hover:bg-slate-100"
+                >
+                  Nahi, Cancel Karein
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteChannel}
+                  className="px-5 py-2.5 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-md cursor-pointer border border-rose-700"
+                >
+                  Haan, Sab Delete Karein
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

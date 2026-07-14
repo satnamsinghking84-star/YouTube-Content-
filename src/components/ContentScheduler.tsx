@@ -243,24 +243,28 @@ export default function ContentScheduler({
       <div className="bg-slate-900 border-2 border-slate-950 rounded-2xl p-4 md:px-6 md:py-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer select-none"
+          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer select-none min-w-0 flex-1"
           title="Click to Collapse or Expand Scheduler & Details"
         >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-slate-800 border border-slate-700 rounded-lg flex items-center justify-center transition-all active:scale-90">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-1.5 bg-slate-800 border border-slate-700 rounded-lg flex items-center justify-center transition-all active:scale-90 shrink-0">
               {isCollapsed ? <ChevronDown className="w-4 h-4 text-white" /> : <ChevronUp className="w-4 h-4 text-white" />}
             </div>
-            <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl">
+            <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl shrink-0">
               <Youtube className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-1.5">
-                <span>Video Strategy & Scheduler</span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-700">
-                  {isCollapsed ? 'Collapsed' : 'Open'}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <h3 className="font-bold text-white text-sm md:text-base whitespace-nowrap shrink-0">
+                  Video Strategy & Scheduler
+                </h3>
+                <span className="text-[9px] md:text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full uppercase font-extrabold tracking-wider border border-slate-700 whitespace-nowrap">
+                  {isCollapsed ? 'Closed' : 'Active'}
                 </span>
-              </h3>
-              <p className="text-[10px] md:text-xs text-slate-400 font-medium">Create and manage content plans for <span className="text-rose-400 font-bold">{channelName}</span> on {selectedDate}</p>
+              </div>
+              <p className="text-[10px] md:text-xs text-slate-400 font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+                Create & manage plans for <span className="text-rose-400 font-bold">{channelName}</span> on {selectedDate}
+              </p>
             </div>
           </div>
         </div>

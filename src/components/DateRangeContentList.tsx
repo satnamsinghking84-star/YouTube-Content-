@@ -260,26 +260,33 @@ export default function DateRangeContentList({
     <div className="bg-white border-2 border-slate-950 rounded-2xl p-4 md:p-6 shadow-sm space-y-4">
       {/* Box Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-slate-950 pb-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
           <div 
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all"
+            className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-xl select-none transition-all min-w-0"
             title="Click to Collapse or Expand Videos"
           >
-            <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90">
+            <div className="p-1.5 bg-slate-100 hover:bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90 shrink-0">
               {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
             </div>
-            <h4 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-              <Video className="w-5 h-5 text-slate-950 animate-pulse" />
-              <span>Video {isCollapsed ? ' [📁 Collapsed]' : ' [📖 Open]'}</span>
-            </h4>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <h4 className="text-sm md:text-base font-black text-slate-950 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                  <Video className="w-4 h-4 md:w-5 md:h-5 text-slate-950" />
+                  <span>Video List</span>
+                </h4>
+                <span className="text-[9px] md:text-[10px] bg-slate-100 text-slate-900 px-2 py-0.5 rounded-full uppercase font-extrabold tracking-wider border border-slate-950 whitespace-nowrap">
+                  {isCollapsed ? 'Closed' : 'Active'}
+                </span>
+              </div>
+            </div>
           </div>
           
           {/* Google Sheets Export Button */}
           {!isCollapsed && filteredItems.length > 0 && (
             <button
               onClick={handleDownloadCSV}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg transition-all active:scale-95 shadow-sm cursor-pointer border border-emerald-800"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg transition-all active:scale-95 shadow-sm cursor-pointer border border-emerald-800 shrink-0"
               title="Download structured data CSV to import in Google Sheets"
             >
               <FileSpreadsheet className="w-4 h-4" />

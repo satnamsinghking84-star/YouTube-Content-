@@ -215,29 +215,31 @@ export default function ContentCalendar({
       <div className="bg-slate-50/80 px-4 md:px-6 py-4 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div 
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer hover:bg-slate-100 p-1.5 rounded-xl select-none transition-all"
+          className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto cursor-pointer hover:bg-slate-100 p-1.5 rounded-xl select-none transition-all min-w-0 flex-1"
           title="Click to Collapse or Expand Calendar"
         >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90 animate-pulse">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-1.5 bg-slate-200 border-2 border-slate-950 rounded-lg flex items-center justify-center transition-all active:scale-90 shrink-0">
               {isCollapsed ? <ChevronDown className="w-4 h-4 text-slate-950" /> : <ChevronUp className="w-4 h-4 text-slate-950" />}
             </div>
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
               <CalendarIcon className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm md:text-base flex items-center gap-1.5">
-                <span>{MONTHS[month]} {year}</span>
-                <span className="text-[10px] bg-slate-200 text-slate-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-normal border border-slate-950">
-                  {isCollapsed ? 'Collapsed' : 'Open'}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <h3 className="font-bold text-slate-800 text-sm md:text-base whitespace-nowrap shrink-0">
+                  {MONTHS[month]} {year}
+                </h3>
+                <span className="text-[9px] md:text-[10px] bg-slate-200 text-slate-900 px-2 py-0.5 rounded-full uppercase font-extrabold tracking-wider border border-slate-950 whitespace-nowrap">
+                  {isCollapsed ? 'Closed' : 'Active'}
                 </span>
-              </h3>
-              <p className="text-[10px] md:text-xs text-slate-500 font-medium">Video Schedules & Strategy Planner</p>
+              </div>
+              <p className="text-[10px] md:text-xs text-slate-500 font-semibold whitespace-nowrap overflow-hidden text-ellipsis">Video Schedules & Strategy Planner</p>
             </div>
           </div>
 
           {/* Mobile view badge */}
-          <div className="sm:hidden flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded-lg font-bold">
+          <div className="sm:hidden flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-[10px] px-2 py-1 rounded-lg font-bold shrink-0">
             <Layers className="w-3.5 h-3.5" />
             <span>{viewMode === 'month' ? 'Month' : 'Week'} View</span>
           </div>
