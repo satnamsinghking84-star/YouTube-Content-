@@ -26,7 +26,7 @@ interface DailyPlanProps {
   items?: ContentScheduleItem[];
   onAddTask: (task: DailyPlanningTask) => void;
   onToggleTask: (id: string) => void;
-  onDeleteTask: (id: string) => void;
+  onDeleteTask: (id: string | string[]) => void;
 }
 
 const QUICK_TASK_PRESETS = [
@@ -171,9 +171,8 @@ export default function DailyPlan({
           t.text.trim().toLowerCase() === deletingTask.text.trim().toLowerCase() &&
           t.date >= deletingTask.date
         );
-        for (const t of tasksToDelete) {
-          await onDeleteTask(t.id);
-        }
+        const ids = tasksToDelete.map(t => t.id);
+        await onDeleteTask(ids);
       }
       setDeletingTask(null);
     } catch (e) {

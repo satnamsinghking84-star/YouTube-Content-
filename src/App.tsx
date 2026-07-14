@@ -14,7 +14,8 @@ import {
   Edit3,
   ChevronDown,
   ChevronUp,
-  Edit2
+  Edit2,
+  Lightbulb
 } from 'lucide-react';
 import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types';
 import ContentCalendar from './components/ContentCalendar';
@@ -106,8 +107,25 @@ export default function App() {
   const [showAddChannelModal, setShowAddChannelModal] = useState(false);
   const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState(false);
   
-  // Check if we are inside the Ideas Workspace view from the URL parameter
-  const isIdeasWorkspace = new URLSearchParams(window.location.search).get('view') === 'ideas';
+  // Check if we are inside the Ideas Workspace view from the URL parameter or state
+  const [viewMode, setViewMode] = useState<'dashboard' | 'ideas'>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return (urlParams.get('view') === 'ideas') ? 'ideas' : 'dashboard';
+  });
+
+  const handleToggleView = (mode: 'dashboard' | 'ideas') => {
+    setViewMode(mode);
+    const url = new URL(window.location.href);
+    if (mode === 'ideas') {
+      url.searchParams.set('view', 'ideas');
+      if (activeChannelId) {
+        url.searchParams.set('channelId', activeChannelId);
+      }
+    } else {
+      url.searchParams.delete('view');
+    }
+    window.history.pushState({}, '', url.toString());
+  };
 
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelHandle, setNewChannelHandle] = useState('');
@@ -138,13 +156,76 @@ export default function App() {
     let unsubscribeContent: () => void;
     let unsubscribeTasks: () => void;
 
-    const initFirebase = async () => {
+    let channelsDone = false;
+    let contentDone = false;
+    let tasksDone = false;
+
+    const checkAllLoaded = () => {
+      if (channelsDone && contentDone && tasksDone) {
+        setLoading(false);
+      }
+    };
+
+    // Setup realtime snapshots synchronously right away for ultra-fast loading
+    unsubscribeChannels = onSnapshot(collection(db, 'channels'), (snapshot) => {
+      const loadedChannels: YouTubeChannel[] = [];
+      snapshot.forEach((doc) => {
+        loadedChannels.push(doc.data() as YouTubeChannel);
+      });
+      if (loadedChannels.length > 0) {
+        setChannels(loadedChannels);
+        // If no active channel is selected yet, choose the first one
+        setActiveChannelId(prev => {
+          if (prev && loadedChannels.some(c => c.id === prev)) return prev;
+          const fallbackId = loadedChannels[0]?.id || '';
+          localStorage.setItem('yt_active_channel_id', fallbackId);
+          return fallbackId;
+        });
+      }
+      channelsDone = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Channels snapshot error: ", error);
+      channelsDone = true;
+      checkAllLoaded();
+    });
+
+    unsubscribeContent = onSnapshot(collection(db, 'content_items'), (snapshot) => {
+      const loadedContent: ContentScheduleItem[] = [];
+      snapshot.forEach((doc) => {
+        loadedContent.push(doc.data() as ContentScheduleItem);
+      });
+      setContentItems(loadedContent);
+      contentDone = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Content items snapshot error: ", error);
+      contentDone = true;
+      checkAllLoaded();
+    });
+
+    unsubscribeTasks = onSnapshot(collection(db, 'daily_tasks'), (snapshot) => {
+      const loadedTasks: DailyPlanningTask[] = [];
+      snapshot.forEach((doc) => {
+        loadedTasks.push(doc.data() as DailyPlanningTask);
+      });
+      setDailyTasks(loadedTasks);
+      tasksDone = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Tasks snapshot error: ", error);
+      tasksDone = true;
+      checkAllLoaded();
+    });
+
+    // Run background seeding check asynchronously so it doesn't block UI load
+    const checkAndSeed = async () => {
       try {
         const channelsRef = collection(db, 'channels');
         const querySnapshot = await getDocs(query(channelsRef));
         
         if (querySnapshot.empty) {
-          console.log('Seeding initial data into Firestore...');
+          console.log('Seeding initial data into Firestore in the background...');
           const batch = writeBatch(db);
           
           INITIAL_CHANNELS.forEach(chan => {
@@ -164,51 +245,9 @@ export default function App() {
       } catch (err) {
         console.error("Error seeding initial data: ", err);
       }
-
-      // Realtime snapshots
-      unsubscribeChannels = onSnapshot(collection(db, 'channels'), (snapshot) => {
-        const loadedChannels: YouTubeChannel[] = [];
-        snapshot.forEach((doc) => {
-          loadedChannels.push(doc.data() as YouTubeChannel);
-        });
-        if (loadedChannels.length > 0) {
-          setChannels(loadedChannels);
-          // If no active channel is selected yet, choose the first one
-          setActiveChannelId(prev => {
-            if (prev && loadedChannels.some(c => c.id === prev)) return prev;
-            const fallbackId = loadedChannels[0]?.id || '';
-            localStorage.setItem('yt_active_channel_id', fallbackId);
-            return fallbackId;
-          });
-        }
-      }, (error) => {
-        console.error("Channels snapshot error: ", error);
-      });
-
-      unsubscribeContent = onSnapshot(collection(db, 'content_items'), (snapshot) => {
-        const loadedContent: ContentScheduleItem[] = [];
-        snapshot.forEach((doc) => {
-          loadedContent.push(doc.data() as ContentScheduleItem);
-        });
-        setContentItems(loadedContent);
-      }, (error) => {
-        console.error("Content items snapshot error: ", error);
-      });
-
-      unsubscribeTasks = onSnapshot(collection(db, 'daily_tasks'), (snapshot) => {
-        const loadedTasks: DailyPlanningTask[] = [];
-        snapshot.forEach((doc) => {
-          loadedTasks.push(doc.data() as DailyPlanningTask);
-        });
-        setDailyTasks(loadedTasks);
-        setLoading(false);
-      }, (error) => {
-        console.error("Tasks snapshot error: ", error);
-        setLoading(false);
-      });
     };
 
-    initFirebase();
+    checkAndSeed();
 
     return () => {
       if (unsubscribeChannels) unsubscribeChannels();
@@ -255,13 +294,23 @@ export default function App() {
     }
   };
 
-  const handleDeleteTask = async (id: string) => {
+  const handleDeleteTask = async (idOrIds: string | string[]) => {
     try {
-      await deleteDoc(doc(db, 'daily_tasks', id));
-      triggerToast("Task deleted.", "info");
+      if (Array.isArray(idOrIds)) {
+        if (idOrIds.length === 0) return;
+        const batch = writeBatch(db);
+        idOrIds.forEach(id => {
+          batch.delete(doc(db, 'daily_tasks', id));
+        });
+        await batch.commit();
+        triggerToast(`${idOrIds.length} tasks deleted.`, "info");
+      } else {
+        await deleteDoc(doc(db, 'daily_tasks', idOrIds));
+        triggerToast("Task deleted.", "info");
+      }
     } catch (err) {
       console.error(err);
-      triggerToast("Failed to delete task", "error");
+      triggerToast("Failed to delete task(s)", "error");
     }
   };
 
@@ -570,6 +619,18 @@ export default function App() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Idea Shortcut Button */}
+            <button
+              onClick={() => handleToggleView(viewMode === 'ideas' ? 'dashboard' : 'ideas')}
+              className={`flex items-center gap-1.5 px-4 py-2.5 border-2 border-slate-950 text-slate-950 rounded-xl font-black text-xs transition-all cursor-pointer active:scale-95 select-none shrink-0 shadow-sm ${
+                viewMode === 'ideas' ? 'bg-yellow-300 hover:bg-yellow-400 animate-none' : 'bg-yellow-50 hover:bg-yellow-100'
+              }`}
+              title="Channel brainstorming ideas grid"
+            >
+              <Lightbulb className={`w-4 h-4 text-yellow-600 shrink-0 ${viewMode === 'ideas' ? 'animate-bounce' : 'animate-pulse'}`} />
+              <span>Idea</span>
+            </button>
           </div>
 
         </div>
@@ -799,9 +860,10 @@ export default function App() {
       </AnimatePresence>
 
       {/* --- CONTENT WORKSPACE OR MAIN DASHBOARD CONTENT --- */}
-      {isIdeasWorkspace ? (
+      {viewMode === 'ideas' ? (
         <ChannelIdeasWorkspace
           activeChannel={activeChannel}
+          onBack={() => handleToggleView('dashboard')}
           triggerToast={triggerToast}
         />
       ) : (
