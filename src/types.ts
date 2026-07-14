@@ -32,5 +32,6 @@ export interface ChannelIdea {
   title: string;
   shortDescription: string;
   createdAt: string; // Timestamp
+  isCompleted?: boolean;
 }
 

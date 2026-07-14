@@ -44,7 +44,18 @@ export default function ChannelIdeasWorkspace({
     if (!activeChannel?.id) return [];
     try {
       const cached = localStorage.getItem(`cache_ideas_${activeChannel.id}`);
-      return cached ? JSON.parse(cached) : [];
+      if (!cached) return [];
+      const parsed = JSON.parse(cached) as ChannelIdea[];
+      parsed.sort((a, b) => {
+        const compA = a.isCompleted ? 1 : 0;
+        const compB = b.isCompleted ? 1 : 0;
+        if (compA !== compB) return compA - compB;
+        const numA = parseFloat(a.number) || 0;
+        const numB = parseFloat(b.number) || 0;
+        if (numA !== numB) return numA - numB;
+        return (a.createdAt || '').localeCompare(b.createdAt || '');
+      });
+      return parsed;
     } catch {
       return [];
     }
@@ -78,6 +89,7 @@ export default function ChannelIdeasWorkspace({
     number: string;
     title: string;
     shortDescription: string;
+    isCompleted?: boolean;
   }>>([]);
 
   // Value in the Formula Bar at the bottom
@@ -96,7 +108,16 @@ export default function ChannelIdeasWorkspace({
     try {
       const cached = localStorage.getItem(`cache_ideas_${activeChannel.id}`);
       if (cached) {
-        const parsed = JSON.parse(cached);
+        const parsed = JSON.parse(cached) as ChannelIdea[];
+        parsed.sort((a, b) => {
+          const compA = a.isCompleted ? 1 : 0;
+          const compB = b.isCompleted ? 1 : 0;
+          if (compA !== compB) return compA - compB;
+          const numA = parseFloat(a.number) || 0;
+          const numB = parseFloat(b.number) || 0;
+          if (numA !== numB) return numA - numB;
+          return (a.createdAt || '').localeCompare(b.createdAt || '');
+        });
         setIdeas(parsed);
         setLoading(false);
       } else {
@@ -118,12 +139,16 @@ export default function ChannelIdeasWorkspace({
         list.push({ id: docSnap.id, ...docSnap.data() } as ChannelIdea);
       });
       
-      // Sort ideas by number or creation timestamp
+      // Sort ideas: incomplete (pending) ones first, then completed ones
       list.sort((a, b) => {
+        const compA = a.isCompleted ? 1 : 0;
+        const compB = b.isCompleted ? 1 : 0;
+        if (compA !== compB) return compA - compB;
+        
         const numA = parseFloat(a.number) || 0;
         const numB = parseFloat(b.number) || 0;
         if (numA !== numB) return numA - numB;
-        return a.createdAt.localeCompare(b.createdAt);
+        return (a.createdAt || '').localeCompare(b.createdAt || '');
       });
 
       setIdeas(list);
@@ -149,7 +174,8 @@ export default function ChannelIdeasWorkspace({
       id: idea.id,
       number: idea.number || String(index + 1),
       title: idea.title || '',
-      shortDescription: idea.shortDescription || ''
+      shortDescription: idea.shortDescription || '',
+      isCompleted: !!idea.isCompleted
     }));
 
     // Ensure we have at least 15 rows for that premium Google Sheets feeling
@@ -160,7 +186,8 @@ export default function ChannelIdeasWorkspace({
         tempId: `row-blank-${idx}-${Date.now()}`,
         number: String(idx + 1),
         title: '',
-        shortDescription: ''
+        shortDescription: '',
+        isCompleted: false
       });
     }
 
@@ -226,6 +253,7 @@ export default function ChannelIdeasWorkspace({
             number: finalNumber || String(rowIndex + 1),
             title: finalTitle,
             shortDescription: finalDesc,
+            isCompleted: !!targetRow.isCompleted,
             createdAt: new Date().toISOString()
           }, { merge: true });
         }
@@ -239,6 +267,7 @@ export default function ChannelIdeasWorkspace({
             number: finalNumber || String(rowIndex + 1),
             title: finalTitle,
             shortDescription: finalDesc,
+            isCompleted: !!targetRow.isCompleted,
             createdAt: new Date().toISOString()
           });
           
@@ -327,6 +356,65 @@ export default function ChannelIdeasWorkspace({
     }
   };
 
+  // Toggle rows completed/pending status
+  const toggleRowCompleted = async (rowIndex: number) => {
+    if (!activeChannel) return;
+    const targetRow = sheetRows[rowIndex];
+    if (!targetRow) return;
+
+    const newCompleted = !targetRow.isCompleted;
+
+    // Local update first
+    const updatedRows = [...sheetRows];
+    updatedRows[rowIndex] = {
+      ...targetRow,
+      isCompleted: newCompleted
+    };
+    setSheetRows(updatedRows);
+
+    setIsSaving(true);
+    try {
+      if (targetRow.id) {
+        // Update existing document in Firestore
+        await setDoc(doc(db, 'ideas', targetRow.id), {
+          isCompleted: newCompleted
+        }, { merge: true });
+        triggerToast(newCompleted ? "Marked idea as completed" : "Marked idea as pending", "success");
+      } else {
+        // If it's a blank row, save only if it has some entered content
+        const finalNumber = (targetRow.number || '').trim();
+        const finalTitle = (targetRow.title || '').trim();
+        const finalDesc = (targetRow.shortDescription || '').trim();
+        const hasContent = finalTitle || finalDesc;
+
+        if (hasContent) {
+          const newIdeaId = `idea-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+          await setDoc(doc(db, 'ideas', newIdeaId), {
+            id: newIdeaId,
+            channelId: activeChannel.id,
+            number: finalNumber || String(rowIndex + 1),
+            title: finalTitle,
+            shortDescription: finalDesc,
+            isCompleted: newCompleted,
+            createdAt: new Date().toISOString()
+          });
+          
+          updatedRows[rowIndex].id = newIdeaId;
+          setSheetRows(updatedRows);
+          triggerToast(newCompleted ? "Marked idea as completed" : "Marked idea as pending", "success");
+        } else {
+          // Empty row local-only toggle
+          triggerToast("Fill details first to save completion status!", "info");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to toggle completion:", err);
+      triggerToast("Failed to save completion status", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Column resizing mouse & touch controller
   const handleResizeStart = (
     e: React.MouseEvent | React.TouchEvent,
@@ -381,7 +469,7 @@ export default function ChannelIdeasWorkspace({
   };
 
   // Determine total width
-  const totalGridWidth = 48 + colWidthA + colWidthB + colWidthC + 60;
+  const totalGridWidth = 48 + 40 + colWidthA + colWidthB + colWidthC + 60;
 
   const isColAActive = selectedCell?.colKey === 'number';
   const isColBActive = selectedCell?.colKey === 'title';
@@ -496,6 +584,11 @@ export default function ChannelIdeasWorkspace({
                 
               </div>
 
+              {/* Done Header Column */}
+              <div className="w-10 bg-slate-800 border-r border-b border-slate-700 flex items-center justify-center text-[10px] font-black tracking-wider text-slate-400 shrink-0 select-none">
+                <Check className="w-4 h-4 stroke-[2.5]" />
+              </div>
+
               {/* Col A Header */}
               <div 
                 className={`border-r border-b border-slate-700 flex items-center justify-between px-2 relative shrink-0 transition-colors duration-150 ${
@@ -574,6 +667,11 @@ export default function ChannelIdeasWorkspace({
                   <div className="w-12 bg-slate-800 text-slate-400 border-r border-b border-slate-700 text-[11px] font-black flex items-center justify-center select-none shrink-0 h-full">
                     1
                   </div>
+
+                  {/* Column Done Title */}
+                  <div className="w-10 border-r border-slate-200 bg-slate-50 shrink-0 flex items-center justify-center select-none">
+                    <Check className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
                   
                   {/* Column A Title */}
                   <div 
@@ -607,7 +705,14 @@ export default function ChannelIdeasWorkspace({
                 {sheetRows.map((row, rIdx) => {
                   const isRowActive = selectedCell?.rowIndex === rIdx;
                   return (
-                    <div key={row.tempId} className="flex hover:bg-slate-50/50 items-stretch min-h-12 relative border-b border-slate-150">
+                    <div 
+                      key={row.tempId} 
+                      className={`flex items-stretch min-h-12 relative border-b transition-colors duration-150 ${
+                        row.isCompleted 
+                          ? 'bg-emerald-50/40 hover:bg-emerald-50/70 border-emerald-100' 
+                          : 'hover:bg-slate-50/50 border-slate-150 bg-white'
+                      }`}
+                    >
                       
                       {/* Row Counter (Google Sheets index offset by 2) */}
                       <div className={`w-12 text-[11px] font-black flex items-center justify-center select-none shrink-0 border-r border-slate-300 transition-colors duration-150 ${
@@ -616,6 +721,29 @@ export default function ChannelIdeasWorkspace({
                           : 'bg-slate-800 text-slate-400 border-b border-slate-700'
                       }`}>
                         {rIdx + 2}
+                      </div>
+
+                      {/* Column Checkbox Cell */}
+                      <div className={`w-10 border-r border-slate-150 flex items-center justify-center shrink-0 relative transition-colors duration-150 ${
+                        row.isCompleted ? 'bg-emerald-50/60 border-emerald-100/40' : ''
+                      }`}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleRowCompleted(rIdx);
+                          }}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                            row.isCompleted
+                              ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm'
+                              : 'border-slate-300 hover:border-emerald-500 hover:bg-slate-50'
+                          }`}
+                          title={row.isCompleted ? "Mark as pending" : "Mark as completed"}
+                        >
+                          {row.isCompleted && (
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          )}
+                        </button>
                       </div>
 
                       {/* Cell A: Number */}
@@ -654,7 +782,9 @@ export default function ChannelIdeasWorkspace({
                             }}
                           />
                         ) : (
-                          <div className="text-xs font-black text-slate-900 px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none">
+                          <div className={`text-xs font-black px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none transition-all ${
+                            row.isCompleted ? 'text-emerald-700/60 line-through decoration-emerald-400' : 'text-slate-900'
+                          }`}>
                             {row.number || ''}
                           </div>
                         )}
@@ -705,7 +835,9 @@ export default function ChannelIdeasWorkspace({
                             }}
                           />
                         ) : (
-                          <div className="text-xs font-black text-slate-900 px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none">
+                          <div className={`text-xs font-black px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none transition-all ${
+                            row.isCompleted ? 'text-emerald-800/60 line-through decoration-emerald-400/75' : 'text-slate-900'
+                          }`}>
                             {row.title || <span className="text-slate-350 italic font-semibold">Empty cell...</span>}
                           </div>
                         )}
@@ -756,7 +888,9 @@ export default function ChannelIdeasWorkspace({
                             }}
                           />
                         ) : (
-                          <div className="text-xs font-semibold text-slate-500 px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none">
+                          <div className={`text-xs font-semibold px-3 py-2.5 whitespace-normal break-words leading-relaxed w-full select-none transition-all ${
+                            row.isCompleted ? 'text-emerald-600/60 line-through decoration-emerald-400/60' : 'text-slate-500'
+                          }`}>
                             {row.shortDescription || <span className="text-slate-200 italic font-semibold">Empty cell...</span>}
                           </div>
                         )}
@@ -771,7 +905,9 @@ export default function ChannelIdeasWorkspace({
                       </div>
 
                       {/* Row Delete Button */}
-                      <div className="w-[60px] bg-slate-50 flex items-center justify-center border-b border-slate-150 shrink-0">
+                      <div className={`w-[60px] flex items-center justify-center border-b shrink-0 transition-colors duration-150 ${
+                        row.isCompleted ? 'bg-emerald-50/20 border-emerald-100' : 'bg-slate-50 border-slate-150'
+                      }`}>
                         <button
                           onClick={() => handleDeleteRow(rIdx)}
                           className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition-all cursor-pointer"
