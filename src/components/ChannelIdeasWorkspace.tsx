@@ -40,8 +40,24 @@ export default function ChannelIdeasWorkspace({
   onBack,
   triggerToast
 }: ChannelIdeasWorkspaceProps) {
-  const [ideas, setIdeas] = useState<ChannelIdea[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [ideas, setIdeas] = useState<ChannelIdea[]>(() => {
+    if (!activeChannel?.id) return [];
+    try {
+      const cached = localStorage.getItem(`cache_ideas_${activeChannel.id}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!activeChannel?.id) return false;
+    try {
+      const cached = localStorage.getItem(`cache_ideas_${activeChannel.id}`);
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
   const [isSaving, setIsSaving] = useState(false);
 
   // Grid columns widths in pixels
@@ -76,7 +92,21 @@ export default function ChannelIdeasWorkspace({
       return;
     }
 
-    setLoading(true);
+    // Try loading cached ideas first for lightning-fast (0ms) render
+    try {
+      const cached = localStorage.getItem(`cache_ideas_${activeChannel.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setIdeas(parsed);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+    } catch (e) {
+      console.error(e);
+      setLoading(true);
+    }
+
     const q = query(
       collection(db, 'ideas'),
       where('channelId', '==', activeChannel.id)
@@ -97,6 +127,11 @@ export default function ChannelIdeasWorkspace({
       });
 
       setIdeas(list);
+      try {
+        localStorage.setItem(`cache_ideas_${activeChannel.id}`, JSON.stringify(list));
+      } catch (e) {
+        console.error(e);
+      }
       setLoading(false);
     }, (error) => {
       console.error("Error loading ideas:", error);
@@ -415,7 +450,13 @@ export default function ChannelIdeasWorkspace({
             </button>
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-2 text-[10px] font-black uppercase tracking-wider text-slate-500">
+          <div className="flex items-center justify-between sm:justify-end gap-3 text-[10px] font-black uppercase tracking-wider text-slate-500">
+            {loading && (
+              <div className="flex items-center gap-1.5 text-indigo-600">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                <span>Syncing...</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               {isSaving ? (
                 <>
@@ -517,12 +558,7 @@ export default function ChannelIdeasWorkspace({
             </div>
 
             {/* CELLS GRID */}
-            {loading ? (
-              <div className="py-24 text-center text-xs font-black text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
-                <span>Synchronizing cells...</span>
-              </div>
-            ) : !activeChannel ? (
+            {!activeChannel ? (
               <div className="py-24 text-center text-xs font-black text-slate-400 uppercase tracking-widest p-6">
                 Please register a channel to load spreadsheet ideas.
               </div>

@@ -89,19 +89,48 @@ const PRESET_AVATAR_COLORS = [
 
 export default function App() {
   // --- Persistent States from Local Storage / Firebase ---
-  const [channels, setChannels] = useState<YouTubeChannel[]>([]);
+  const [channels, setChannels] = useState<YouTubeChannel[]>(() => {
+    try {
+      const cached = localStorage.getItem('cache_channels');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [activeChannelId, setActiveChannelId] = useState<string>(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const urlChanId = urlParams.get('channelId');
     if (urlChanId) return urlChanId;
     return localStorage.getItem('yt_active_channel_id') || '';
   });
-  const [contentItems, setContentItems] = useState<ContentScheduleItem[]>([]);
-  const [dailyTasks, setDailyTasks] = useState<DailyPlanningTask[]>([]);
+  const [contentItems, setContentItems] = useState<ContentScheduleItem[]>(() => {
+    try {
+      const cached = localStorage.getItem('cache_content_items');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [dailyTasks, setDailyTasks] = useState<DailyPlanningTask[]>(() => {
+    try {
+      const cached = localStorage.getItem('cache_daily_tasks');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date(2026, 6, 13).toISOString().split('T')[0];
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    // If we have cached channels, we don't need a blocking loading screen!
+    try {
+      const cached = localStorage.getItem('cache_channels');
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
 
   // --- UI Interactive States ---
   const [showAddChannelModal, setShowAddChannelModal] = useState(false);
@@ -174,6 +203,11 @@ export default function App() {
       });
       if (loadedChannels.length > 0) {
         setChannels(loadedChannels);
+        try {
+          localStorage.setItem('cache_channels', JSON.stringify(loadedChannels));
+        } catch (e) {
+          console.error(e);
+        }
         // If no active channel is selected yet, choose the first one
         setActiveChannelId(prev => {
           if (prev && loadedChannels.some(c => c.id === prev)) return prev;
@@ -196,6 +230,11 @@ export default function App() {
         loadedContent.push(doc.data() as ContentScheduleItem);
       });
       setContentItems(loadedContent);
+      try {
+        localStorage.setItem('cache_content_items', JSON.stringify(loadedContent));
+      } catch (e) {
+        console.error(e);
+      }
       contentDone = true;
       checkAllLoaded();
     }, (error) => {
@@ -210,6 +249,11 @@ export default function App() {
         loadedTasks.push(doc.data() as DailyPlanningTask);
       });
       setDailyTasks(loadedTasks);
+      try {
+        localStorage.setItem('cache_daily_tasks', JSON.stringify(loadedTasks));
+      } catch (e) {
+        console.error(e);
+      }
       tasksDone = true;
       checkAllLoaded();
     }, (error) => {
