@@ -353,13 +353,23 @@ export default function App() {
   };
 
   // --- Daily Planning Task Handlers ---
-  const handleAddTask = async (task: DailyPlanningTask) => {
+  const handleAddTask = async (taskOrTasks: DailyPlanningTask | DailyPlanningTask[]) => {
     try {
-      await setDoc(doc(db, 'daily_tasks', task.id), task);
-      triggerToast("Task added successfully!");
+      if (Array.isArray(taskOrTasks)) {
+        if (taskOrTasks.length === 0) return;
+        const batch = writeBatch(db);
+        taskOrTasks.forEach((t) => {
+          batch.set(doc(db, 'daily_tasks', t.id), t);
+        });
+        await batch.commit();
+        triggerToast(`${taskOrTasks.length} tasks scheduled successfully!`);
+      } else {
+        await setDoc(doc(db, 'daily_tasks', taskOrTasks.id), taskOrTasks);
+        triggerToast("Task added successfully!");
+      }
     } catch (err) {
       console.error(err);
-      triggerToast("Failed to add task", "error");
+      triggerToast("Failed to add task(s)", "error");
     }
   };
 

@@ -24,7 +24,7 @@ interface DailyPlanProps {
   selectedDate: string;
   dailyTasks: DailyPlanningTask[];
   items?: ContentScheduleItem[];
-  onAddTask: (task: DailyPlanningTask) => void;
+  onAddTask: (task: DailyPlanningTask | DailyPlanningTask[]) => void;
   onToggleTask: (id: string) => void;
   onDeleteTask: (id: string | string[]) => void;
 }
@@ -275,46 +275,61 @@ export default function DailyPlan({
 
     // Calculate dates list to add
     const datesToAdd: string[] = [];
+    const [sYear, sMonth, sDay] = selectedDate.split('-').map(Number);
+
     if (durationDaysMode === 'custom') {
       if (customEndDate && customEndDate >= selectedDate) {
-        const start = new Date(selectedDate);
-        const end = new Date(customEndDate);
-        const temp = new Date(start);
-        while (temp <= end) {
-          datesToAdd.push(temp.toISOString().split('T')[0]);
-          temp.setDate(temp.getDate() + 1);
+        const [eYear, eMonth, eDay] = customEndDate.split('-').map(Number);
+        const startUTC = new Date(Date.UTC(sYear, sMonth - 1, sDay));
+        const endUTC = new Date(Date.UTC(eYear, eMonth - 1, eDay));
+        const tempUTC = new Date(startUTC);
+        
+        while (tempUTC <= endUTC) {
+          datesToAdd.push(tempUTC.toISOString().split('T')[0]);
+          tempUTC.setUTCDate(tempUTC.getUTCDate() + 1);
         }
       } else {
         datesToAdd.push(selectedDate);
       }
     } else {
       const numDays = parseInt(durationDaysMode, 10);
-      const start = new Date(selectedDate);
       for (let i = 0; i < numDays; i++) {
-        const temp = new Date(start);
-        temp.setDate(start.getDate() + i);
-        datesToAdd.push(temp.toISOString().split('T')[0]);
+        const tempUTC = new Date(Date.UTC(sYear, sMonth - 1, sDay + i));
+        datesToAdd.push(tempUTC.toISOString().split('T')[0]);
       }
     }
 
-    // Add for all target dates
-    for (const dateVal of datesToAdd) {
+    // Prepare all tasks to add as an array
+    const tasksToAdd: DailyPlanningTask[] = [];
+    const baseTimestamp = Date.now();
+    for (let i = 0; i < datesToAdd.length; i++) {
+      const dateVal = datesToAdd[i];
       const newTask: DailyPlanningTask = {
-        id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        id: `task-${baseTimestamp}-${i}-${Math.random().toString(36).substr(2, 4)}`,
         channelId: selectedChannelIdForNewTask,
         date: dateVal,
         text: customTaskText.trim(),
         isCompleted: false,
         ...(finalTime ? { targetTime: finalTime } : {})
       };
-      await onAddTask(newTask);
+      tasksToAdd.push(newTask);
     }
 
-    // Reset fields & close
+    // Capture values needed for submission
+    const tasksToSend = tasksToAdd;
+
+    // Reset fields & close modal INSTANTLY so UI doesn't freeze or lag
     setCustomTaskText('');
     setTargetTimeMode('none');
     setDurationDaysMode('1');
     setIsAddModalOpen(false);
+
+    // Call onAddTask asynchronously so modal close is completely smooth and non-blocking
+    try {
+      await onAddTask(tasksToSend);
+    } catch (err) {
+      console.error("Failed to batch add tasks: ", err);
+    }
   };
 
   // Format date nicely for Indian / Global readability (e.g. Monday, 13 July 2026)
@@ -947,9 +962,9 @@ export default function DailyPlan({
                           onClick={() => {
                             setDurationDaysMode(opt.mode as any);
                             if (opt.mode === 'custom' && !customEndDate) {
-                              const start = new Date(selectedDate);
-                              start.setDate(start.getDate() + 7);
-                              setCustomEndDate(start.toISOString().split('T')[0]);
+                              const [y, m, d] = selectedDate.split('-').map(Number);
+                              const startUTC = new Date(Date.UTC(y, m - 1, d + 7));
+                              setCustomEndDate(startUTC.toISOString().split('T')[0]);
                             }
                           }}
                           className={`py-2 text-[10px] font-black rounded-xl border-2 transition-all cursor-pointer ${
