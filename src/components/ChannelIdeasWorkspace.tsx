@@ -9,19 +9,27 @@ import {
   Check, 
   X, 
   Trash,
-  HelpCircle
+  HelpCircle,
+  FileSpreadsheet,
+  Link2,
+  RefreshCw,
+  LogOut,
+  Globe,
+  Database
 } from 'lucide-react';
 import { 
   collection, 
   onSnapshot, 
   doc, 
   setDoc, 
+  getDoc,
   deleteDoc, 
   query, 
   where,
   writeBatch
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
+import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { YouTubeChannel, ChannelIdea } from '../types';
 
 interface ChannelIdeasWorkspaceProps {
@@ -95,6 +103,334 @@ export default function ChannelIdeasWorkspace({
   // Value in the Formula Bar at the bottom
   const [formulaValue, setFormulaValue] = useState('');
   const formulaInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Google Sheets Integration States ---
+  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [googleSheetUrl, setGoogleSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1dNtaSrKM7ymzolqw5paZuKlQ4CKGxRuMqK-3M8VN8Lw/edit?usp=drivesdk');
+  const [isUrlEditing, setIsUrlEditing] = useState(false);
+  const [tempUrlInput, setTempUrlInput] = useState('');
+  const [sheetSyncing, setSheetSyncing] = useState(false);
+
+  // Listen to Firebase Auth state for Google account connection
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setGoogleUser(usr);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch sheet URL config from Firestore if it exists
+  useEffect(() => {
+    if (!activeChannel?.id) return;
+    
+    const loadSheetConfig = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'channel_sheets', activeChannel.id));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.url) {
+            setGoogleSheetUrl(data.url);
+          }
+        } else {
+          setGoogleSheetUrl('https://docs.google.com/spreadsheets/d/1dNtaSrKM7ymzolqw5paZuKlQ4CKGxRuMqK-3M8VN8Lw/edit?usp=drivesdk');
+        }
+      } catch (err: any) {
+        // Log as a warning rather than a fatal error to handle transient connection delays gracefully
+        console.warn("Could not load Google Sheet URL config from Firestore (falling back to default):", err);
+      }
+    };
+    
+    loadSheetConfig();
+  }, [activeChannel?.id]);
+
+  const handleConnectGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    
+    try {
+      setSheetSyncing(true);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleAccessToken(credential.accessToken);
+        setGoogleUser(result.user);
+        triggerToast("Google Account connected for Sheets!", "success");
+      } else {
+        triggerToast("Connected, but could not retrieve access token.", "error");
+      }
+    } catch (err: any) {
+      console.error("Google Auth failed:", err);
+      if (err.code === 'auth/popup-closed-by-user' || String(err.message).includes('popup-closed-by-user')) {
+        triggerToast("Login window closed. Please click 'Open in New Tab' at the top right and try again!", "error");
+      } else {
+        triggerToast(`Connection failed: ${err.message}`, "error");
+      }
+    } finally {
+      setSheetSyncing(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    try {
+      await signOut(auth);
+      setGoogleAccessToken(null);
+      setGoogleUser(null);
+      triggerToast("Disconnected from Google Sheets", "info");
+    } catch (err: any) {
+      console.error("Disconnect failed:", err);
+      triggerToast("Disconnect failed", "error");
+    }
+  };
+
+  const getSpreadsheetId = (url: string): string | null => {
+    if (!url) return null;
+    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    return match ? match[1] : null;
+  };
+
+  const getFirstSheetName = async (spreadsheetId: string, token: string): Promise<string> => {
+    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Failed to fetch spreadsheet metadata');
+    }
+    const data = await response.json();
+    if (data.sheets && data.sheets.length > 0) {
+      return data.sheets[0].properties.title || 'Sheet1';
+    }
+    return 'Sheet1';
+  };
+
+  const handlePullFromSheet = async () => {
+    if (!googleAccessToken) {
+      triggerToast("Please authenticate/reconnect Google Sheets first!", "error");
+      return;
+    }
+    const spreadsheetId = getSpreadsheetId(googleSheetUrl);
+    if (!spreadsheetId) {
+      triggerToast("Invalid Google Sheets URL format!", "error");
+      return;
+    }
+
+    setSheetSyncing(true);
+    try {
+      const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
+      const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D150`, {
+        headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error?.message || 'Failed to fetch sheet values');
+      }
+      const data = await response.json();
+      const values: string[][] = data.values || [];
+      if (values.length === 0) {
+        triggerToast("No data found in the Google Sheet!", "info");
+        return;
+      }
+      
+      // Map columns
+      let startIndex = 0;
+      const firstRow = values[0];
+      const isHeader = firstRow.some(cell => {
+        const lower = String(cell).toLowerCase();
+        return lower.includes('s.no') || lower.includes('serial') || lower.includes('title') || lower.includes('description') || lower.includes('status') || lower.includes('completed');
+      });
+      if (isHeader) {
+        startIndex = 1;
+      }
+
+      const importedIdeas: Omit<ChannelIdea, 'id'>[] = [];
+      for (let i = startIndex; i < values.length; i++) {
+        const row = values[i];
+        if (!row || row.length === 0) continue;
+        const number = row[0] ? String(row[0]).trim() : String(i + 1 - startIndex);
+        const title = row[1] ? String(row[1]).trim() : '';
+        const shortDescription = row[2] ? String(row[2]).trim() : '';
+        const statusStr = row[3] ? String(row[3]).trim().toLowerCase() : '';
+        const isCompleted = statusStr === 'completed' || statusStr === 'done' || statusStr === 'yes' || statusStr === 'true';
+
+        if (title) {
+          importedIdeas.push({
+            channelId: activeChannel!.id,
+            number,
+            title,
+            shortDescription,
+            isCompleted,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
+      if (importedIdeas.length === 0) {
+        triggerToast("No valid rows with 'Title' found in Google Sheet!", "info");
+        return;
+      }
+
+      const confirmImport = window.confirm(`Found ${importedIdeas.length} ideas in Google Sheet. This will overwrite your current ideas list for "${activeChannel?.name}" in this workspace. Continue?`);
+      if (!confirmImport) return;
+
+      const batch = writeBatch(db);
+      // 1. Delete existing ideas for active channel
+      const currentActiveIdeas = ideas.filter(i => i.channelId === activeChannel!.id);
+      currentActiveIdeas.forEach(i => {
+        batch.delete(doc(db, 'ideas', i.id));
+      });
+
+      // 2. Add imported ideas
+      importedIdeas.forEach((imp, index) => {
+        const newId = `idea-${Date.now()}-${index}-${Math.floor(Math.random() * 100)}`;
+        batch.set(doc(db, 'ideas', newId), {
+          id: newId,
+          ...imp
+        });
+      });
+
+      await batch.commit();
+      triggerToast(`Successfully pulled and synced ${importedIdeas.length} ideas from Google Sheet!`, "success");
+    } catch (err: any) {
+      console.error("Google Sheets Pull error:", err);
+      triggerToast(`Pull failed: ${err.message}`, "error");
+    } finally {
+      setSheetSyncing(false);
+    }
+  };
+
+  const handlePushToSheet = async () => {
+    if (!googleAccessToken) {
+      triggerToast("Please authenticate/reconnect Google Sheets first!", "error");
+      return;
+    }
+    const spreadsheetId = getSpreadsheetId(googleSheetUrl);
+    if (!spreadsheetId) {
+      triggerToast("Invalid Google Sheets URL format!", "error");
+      return;
+    }
+
+    const currentActiveIdeas = ideas.filter(i => i.channelId === activeChannel!.id);
+    if (currentActiveIdeas.length === 0) {
+      triggerToast("No ideas to sync to Google Sheets!", "info");
+      return;
+    }
+
+    const confirmExport = window.confirm(`This will export your current ${currentActiveIdeas.length} ideas and completely overwrite the values on your connected Google Sheet. Continue?`);
+    if (!confirmExport) return;
+
+    setSheetSyncing(true);
+    try {
+      const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
+      
+      // Clear previous content
+      const clearRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D200:clear`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${googleAccessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!clearRes.ok) {
+        const err = await clearRes.json();
+        throw new Error(err.error?.message || 'Failed to clear existing sheet data.');
+      }
+
+      // Format data
+      const header = ["S.No", "Idea Title", "Short Description", "Status"];
+      const rows = currentActiveIdeas.map((idea, index) => [
+        idea.number || String(index + 1),
+        idea.title || '',
+        idea.shortDescription || '',
+        idea.isCompleted ? 'Completed' : 'Pending'
+      ]);
+      const values = [header, ...rows];
+
+      // Update values
+      const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D${values.length}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${googleAccessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          range: `${sheetName}!A1:D${values.length}`,
+          majorDimension: 'ROWS',
+          values
+        })
+      });
+
+      if (!updateRes.ok) {
+        const err = await updateRes.json();
+        throw new Error(err.error?.message || 'Failed to update sheet values.');
+      }
+
+      triggerToast("Successfully pushed and synchronized all ideas to your Google Sheet!", "success");
+    } catch (err: any) {
+      console.error("Google Sheets Push error:", err);
+      triggerToast(`Push failed: ${err.message}`, "error");
+    } finally {
+      setSheetSyncing(false);
+    }
+  };
+
+  const handleSaveSheetUrl = async () => {
+    if (!activeChannel?.id) return;
+    try {
+      await setDoc(doc(db, 'channel_sheets', activeChannel.id), {
+        url: tempUrlInput.trim(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setGoogleSheetUrl(tempUrlInput.trim());
+      setIsUrlEditing(false);
+      triggerToast("Google Sheet URL updated successfully!", "success");
+    } catch (err: any) {
+      console.error(err);
+      triggerToast("Failed to save sheet URL", "error");
+    }
+  };
+
+  const silentPushToGoogleSheet = async (latestIdeas: ChannelIdea[]) => {
+    if (!googleAccessToken || !googleSheetUrl) return;
+    const spreadsheetId = getSpreadsheetId(googleSheetUrl);
+    if (!spreadsheetId) return;
+
+    try {
+      const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
+      
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D150:clear`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${googleAccessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const header = ["S.No", "Idea Title", "Short Description", "Status"];
+      const rows = latestIdeas.map((idea, index) => [
+        idea.number || String(index + 1),
+        idea.title || '',
+        idea.shortDescription || '',
+        idea.isCompleted ? 'Completed' : 'Pending'
+      ]);
+      const values = [header, ...rows];
+
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D${values.length}?valueInputOption=USER_ENTERED`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${googleAccessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          range: `${sheetName}!A1:D${values.length}`,
+          majorDimension: 'ROWS',
+          values
+        })
+      });
+    } catch (err) {
+      console.error("Background auto-sync to Google Sheet failed:", err);
+    }
+  };
 
   // Fetch ideas
   useEffect(() => {
@@ -275,6 +611,35 @@ export default function ChannelIdeasWorkspace({
           setSheetRows(updatedRows);
         }
       }
+
+      // Trigger background push if Google Sheets is connected
+      if (googleAccessToken && googleSheetUrl) {
+        let nextIdeas = [...ideas];
+        if (targetRow.id) {
+          if (isRowTotallyEmpty) {
+            nextIdeas = nextIdeas.filter(i => i.id !== targetRow.id);
+          } else {
+            nextIdeas = nextIdeas.map(i => i.id === targetRow.id ? {
+              ...i,
+              number: finalNumber || i.number,
+              title: finalTitle,
+              shortDescription: finalDesc
+            } : i);
+          }
+        } else if (!isRowTotallyEmpty) {
+          const tempNewIdea: ChannelIdea = {
+            id: `idea-temp`,
+            channelId: activeChannel.id,
+            number: finalNumber || String(rowIndex + 1),
+            title: finalTitle,
+            shortDescription: finalDesc,
+            isCompleted: !!targetRow.isCompleted,
+            createdAt: new Date().toISOString()
+          };
+          nextIdeas = [...nextIdeas, tempNewIdea];
+        }
+        silentPushToGoogleSheet(nextIdeas.filter(i => i.channelId === activeChannel.id));
+      }
     } catch (err) {
       console.error("Save failed:", err);
       triggerToast("Failed to autosave changes", "error");
@@ -342,6 +707,12 @@ export default function ChannelIdeasWorkspace({
           setInlineEditingCell(null);
         }
         triggerToast(`Row deleted`, "success");
+
+        // Trigger background push if Google Sheets is connected
+        if (googleAccessToken && googleSheetUrl) {
+          const nextIdeas = ideas.filter(i => i.id !== row.id);
+          silentPushToGoogleSheet(nextIdeas.filter(i => i.channelId === activeChannel!.id));
+        }
       } catch (err) {
         console.error(err);
         triggerToast("Failed to delete row", "error");
@@ -374,12 +745,14 @@ export default function ChannelIdeasWorkspace({
 
     setIsSaving(true);
     try {
+      let nextIdeas = [...ideas];
       if (targetRow.id) {
         // Update existing document in Firestore
         await setDoc(doc(db, 'ideas', targetRow.id), {
           isCompleted: newCompleted
         }, { merge: true });
         triggerToast(newCompleted ? "Marked idea as completed" : "Marked idea as pending", "success");
+        nextIdeas = ideas.map(i => i.id === targetRow.id ? { ...i, isCompleted: newCompleted } : i);
       } else {
         // If it's a blank row, save only if it has some entered content
         const finalNumber = (targetRow.number || '').trim();
@@ -402,10 +775,27 @@ export default function ChannelIdeasWorkspace({
           updatedRows[rowIndex].id = newIdeaId;
           setSheetRows(updatedRows);
           triggerToast(newCompleted ? "Marked idea as completed" : "Marked idea as pending", "success");
+          
+          const tempNewIdea: ChannelIdea = {
+            id: newIdeaId,
+            channelId: activeChannel.id,
+            number: finalNumber || String(rowIndex + 1),
+            title: finalTitle,
+            shortDescription: finalDesc,
+            isCompleted: newCompleted,
+            createdAt: new Date().toISOString()
+          };
+          nextIdeas = [...nextIdeas, tempNewIdea];
         } else {
           // Empty row local-only toggle
           triggerToast("Fill details first to save completion status!", "info");
+          return;
         }
+      }
+
+      // Trigger background push if Google Sheets is connected
+      if (googleAccessToken && googleSheetUrl) {
+        silentPushToGoogleSheet(nextIdeas.filter(i => i.channelId === activeChannel.id));
       }
     } catch (err) {
       console.error("Failed to toggle completion:", err);
@@ -516,6 +906,157 @@ export default function ChannelIdeasWorkspace({
           <ArrowLeft className="w-4 h-4 shrink-0" />
           <span>Back to Scheduler</span>
         </button>
+      </div>
+
+      {/* --- GOOGLE SHEETS SYNC CONTROL PANEL --- */}
+      <div className="bg-slate-50 border-2 border-slate-950 rounded-2xl p-4 md:p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-green-100 border-2 border-slate-950 rounded-xl flex items-center justify-center text-green-700 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-black text-slate-950 text-sm uppercase tracking-tight flex items-center gap-2">
+                Google Sheets Sync
+                {googleAccessToken ? (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-green-100 border border-green-600 text-green-700 animate-pulse">
+                    Live Syncing
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 border border-amber-600 text-amber-700">
+                    Offline
+                  </span>
+                )}
+              </h3>
+              <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                Link your Google Sheet with this Idea Spreadsheet to load ideas from the sheet or save them back in real-time.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+            {!googleAccessToken ? (
+              <button
+                onClick={handleConnectGoogle}
+                disabled={sheetSyncing}
+                className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white border-2 border-slate-950 rounded-xl font-black text-xs transition-all cursor-pointer active:scale-95 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-50"
+              >
+                {sheetSyncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Globe className="w-4 h-4" />
+                )}
+                <span>Connect Google Sheets</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 w-full md:w-auto justify-between sm:justify-end">
+                <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border-2 border-dashed border-slate-300 hidden sm:inline-block">
+                  Connected: <span className="font-black text-indigo-600">{googleUser?.email || 'Google User'}</span>
+                </span>
+                <button
+                  onClick={handleDisconnectGoogle}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border-2 border-slate-950 rounded-xl font-black text-xs transition-all cursor-pointer active:scale-95 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  title="Disconnect Google Account"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* URL Configuration & Operations */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+          
+          {/* Sheet URL Display / Input */}
+          <div className="lg:col-span-2 bg-white border-2 border-slate-950 rounded-xl p-3 flex flex-col justify-between gap-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5 text-indigo-500" />
+                Connected Spreadsheet Link:
+              </label>
+              {!isUrlEditing ? (
+                <button
+                  onClick={() => {
+                    setTempUrlInput(googleSheetUrl);
+                    setIsUrlEditing(true);
+                  }}
+                  className="text-[10px] font-black text-indigo-600 hover:underline cursor-pointer"
+                >
+                  Change Link
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSaveSheetUrl}
+                    className="text-[10px] font-black text-green-600 hover:underline cursor-pointer"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setIsUrlEditing(false)}
+                    className="text-[10px] font-black text-slate-400 hover:underline cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isUrlEditing ? (
+              <input
+                type="text"
+                value={tempUrlInput}
+                onChange={(e) => setTempUrlInput(e.target.value)}
+                className="w-full text-xs font-bold text-slate-800 border-2 border-slate-950 rounded-lg p-2 focus:ring-1 focus:ring-slate-950 outline-none"
+                placeholder="Paste Google Spreadsheet URL here..."
+              />
+            ) : (
+              <a
+                href={googleSheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-black text-slate-900 hover:text-indigo-600 underline truncate flex items-center gap-1.5"
+              >
+                {googleSheetUrl}
+              </a>
+            )}
+          </div>
+
+          {/* Core Operations (Pull/Push) */}
+          <div className="flex items-center gap-2 bg-white border-2 border-slate-950 rounded-xl p-3">
+            <button
+              onClick={handlePullFromSheet}
+              disabled={sheetSyncing || !googleAccessToken}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-950 border-2 border-slate-950 rounded-lg font-black text-xs transition-all cursor-pointer active:scale-95"
+              title="Loads content from Google Sheets into this workspace"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${sheetSyncing ? 'animate-spin' : ''}`} />
+              <span>Pull from Sheet</span>
+            </button>
+            <button
+              onClick={handlePushToSheet}
+              disabled={sheetSyncing || !googleAccessToken}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 bg-green-50 hover:bg-green-100 disabled:opacity-50 text-green-950 border-2 border-slate-950 rounded-lg font-black text-xs transition-all cursor-pointer active:scale-95"
+              title="Writes your current app's ideas spreadsheet to Google Sheets"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Push to Sheet</span>
+            </button>
+          </div>
+
+        </div>
+
+        {!googleAccessToken && (
+          <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex flex-col gap-1">
+            <span>
+              ⚠️ <strong>Authentication Required:</strong> Please connect your Google account to authorize reading and writing to your Google Sheets. Once connected, changes you make in the app's grid below will also automatically sync to your Google Sheet in the background!
+            </span>
+            <span className="text-slate-500 mt-1">
+              💡 <strong>Tip for Preview Mode:</strong> If the Google login window doesn't open or closes immediately, it's due to iframe popup restrictions. Simply click the <strong>"Open in New Tab"</strong> button in the top right of the screen and connect there!
+            </span>
+          </p>
+        )}
       </div>
 
       {/* --- SHEET CONTAINER --- */}
