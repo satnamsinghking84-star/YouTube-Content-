@@ -15,7 +15,9 @@ import {
   ChevronDown,
   ChevronUp,
   Edit2,
-  Lightbulb
+  Lightbulb,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types';
 import ContentCalendar from './components/ContentCalendar';
@@ -178,6 +180,11 @@ export default function App() {
 
   // Alert & Notification toast states
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Range Download Modal States
+  const [showDownloadRangeModal, setShowDownloadRangeModal] = useState(false);
+  const [downloadStartDate, setDownloadStartDate] = useState('2026-07-01');
+  const [downloadEndDate, setDownloadEndDate] = useState('2026-07-31');
 
   // --- Initialize Firebase & Setup listeners ---
   useEffect(() => {
@@ -464,6 +471,90 @@ export default function App() {
     }
   };
 
+  const handleDownloadCSVByRange = () => {
+    const csvParts: string[] = [];
+
+    // Filter items that are in range, sorted chronologically
+    const filteredContent = contentItems
+      .filter((item) => item.date && item.date >= downloadStartDate && item.date <= downloadEndDate)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Filter daily tasks in range
+    const filteredTasks = dailyTasks
+      .filter((task) => task.date && task.date >= downloadStartDate && task.date <= downloadEndDate)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Add metadata/info
+    csvParts.push(`=== YOUTUBE STRATEGIST EXPORT ===`);
+    csvParts.push(`Selected Range,${downloadStartDate} to ${downloadEndDate}`);
+    csvParts.push(`Export Date,${new Date().toISOString().split('T')[0]}`);
+    csvParts.push('');
+
+    // --- SECTION 1: YOUTUBE CHANNELS ---
+    csvParts.push('=== SECTION 1: YOUTUBE CHANNELS ===');
+    csvParts.push('Channel ID,Channel Name,Channel Handle,Avatar Color');
+    channels.forEach(chan => {
+      const id = (chan.id || '').replace(/"/g, '""');
+      const name = (chan.name || '').replace(/"/g, '""');
+      const handle = (chan.handle || '').replace(/"/g, '""');
+      const color = (chan.avatarColor || '').replace(/"/g, '""');
+      csvParts.push(`"${id}","${name}","${handle}","${color}"`);
+    });
+
+    csvParts.push(''); // Empty row divider
+    csvParts.push(''); // Empty row divider
+
+    // --- SECTION 2: VIDEO SCHEDULER & CONTENT PLANS ---
+    csvParts.push(`=== SECTION 2: VIDEO CONTENT PLANS (${filteredContent.length} found) ===`);
+    csvParts.push('Video ID,Video Title,Channel Name,Scheduled Date,Status,Description,Notes,Thumbnail URL');
+    filteredContent.forEach(item => {
+      const channel = channels.find(c => c.id === item.channelId);
+      const channelName = channel ? channel.name : 'Unknown Channel';
+      
+      const id = (item.id || '').replace(/"/g, '""');
+      const title = (item.title || '').replace(/"/g, '""');
+      const date = (item.date || '').replace(/"/g, '""');
+      const status = (item.status || '').replace(/"/g, '""');
+      const desc = (item.description || '').replace(/"/g, '""');
+      const notes = (item.notes || '').replace(/"/g, '""');
+      const thumb = (item.thumbnail || '').replace(/"/g, '""');
+
+      csvParts.push(`"${id}","${title}","${channelName}","${date}","${status}","${desc}","${notes}","${thumb}"`);
+    });
+
+    csvParts.push(''); // Empty row divider
+    csvParts.push(''); // Empty row divider
+
+    // --- SECTION 3: DAILY PLANNING CHECKLIST (AAJ KA PLAN) ---
+    csvParts.push(`=== SECTION 3: DAILY PLANNING CHECKLIST (${filteredTasks.length} found) ===`);
+    csvParts.push('Task ID,Task Text,Channel Name,Target Date,Completed Status');
+    
+    filteredTasks.forEach(task => {
+      const channel = channels.find(c => c.id === task.channelId);
+      const channelName = channel ? channel.name : 'Unknown Channel';
+
+      const id = (task.id || '').replace(/"/g, '""');
+      const text = (task.text || '').replace(/"/g, '""');
+      const date = (task.date || '').replace(/"/g, '""');
+      const status = task.isCompleted ? 'Completed \u2705' : 'Pending \u23F3';
+
+      csvParts.push(`"${id}","${text}","${channelName}","${date}","${status}"`);
+    });
+
+    const csvContent = csvParts.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `YouTube_Strategist_Export_${downloadStartDate}_to_${downloadEndDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    triggerToast(`Export complete for range ${downloadStartDate} to ${downloadEndDate}!`, "success");
+    setShowDownloadRangeModal(false);
+  };
+
   // Get current active channel object
   const activeChannel = channels.find(c => c.id === activeChannelId) || channels[0];
 
@@ -674,6 +765,15 @@ export default function App() {
             >
               <Lightbulb className={`w-4 h-4 text-yellow-600 shrink-0 ${viewMode === 'ideas' ? 'animate-bounce' : 'animate-pulse'}`} />
               <span>Idea</span>
+            </button>
+
+            {/* Range Download Button */}
+            <button
+              onClick={() => setShowDownloadRangeModal(true)}
+              className="flex items-center justify-center p-2.5 bg-emerald-50 hover:bg-emerald-100 border-2 border-slate-950 text-emerald-700 rounded-xl transition-all cursor-pointer active:scale-95 select-none shrink-0 shadow-sm"
+              title="Download content plans by date range (CSV)"
+            >
+              <Download className="w-4 h-4" />
             </button>
           </div>
 
@@ -896,6 +996,165 @@ export default function App() {
                   className="px-5 py-2.5 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-md cursor-pointer border border-rose-700"
                 >
                   Haan, Sab Delete Karein
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- DATE RANGE DOWNLOAD MODAL --- */}
+      <AnimatePresence>
+        {showDownloadRangeModal && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border-2 border-slate-950 rounded-2xl shadow-xl max-w-lg w-full overflow-hidden text-slate-850"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-5 border-b-2 border-slate-950 flex items-center justify-between bg-emerald-50 text-emerald-950">
+                <div className="flex items-center gap-2.5">
+                  <FileSpreadsheet className="w-5.5 h-5.5 text-emerald-700 shrink-0" />
+                  <div className="text-left">
+                    <h3 className="font-black text-slate-900 text-sm md:text-base leading-tight">Download Content Plans (CSV)</h3>
+                    <p className="text-[10px] uppercase font-extrabold tracking-wider text-emerald-800">Select Date Range for Sheets Export</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowDownloadRangeModal(false)}
+                  className="text-slate-500 hover:text-slate-800 font-extrabold text-sm px-3 py-1.5 hover:bg-emerald-100 rounded-xl cursor-pointer transition-all border border-transparent hover:border-emerald-200"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-5 text-left">
+                <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                  Apne schedule kiye huye videos aur daily checklists ko Google Sheets mein import karne ke liye CSV download karein.
+                </p>
+
+                {/* Range Preset Quick Buttons */}
+                <div>
+                  <label className="text-[10px] uppercase font-extrabold tracking-wider text-slate-450 block mb-2 font-black">
+                    Quick Preset Range Selectors
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadStartDate('2026-07-01');
+                        setDownloadEndDate('2026-07-31');
+                      }}
+                      className="px-3 py-2 text-[11px] font-black border-2 border-slate-950 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all cursor-pointer text-slate-800"
+                    >
+                      📅 This Month (July 2026)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadStartDate('2026-08-01');
+                        setDownloadEndDate('2026-08-31');
+                      }}
+                      className="px-3 py-2 text-[11px] font-black border-2 border-slate-950 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all cursor-pointer text-slate-800"
+                    >
+                      📆 Next Month (Aug 2026)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadStartDate('2026-01-01');
+                        setDownloadEndDate('2026-12-31');
+                      }}
+                      className="px-3 py-2 text-[11px] font-black border-2 border-slate-950 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all cursor-pointer text-slate-800"
+                    >
+                      🌟 Full Year 2026
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadStartDate('2025-09-20');
+                        setDownloadEndDate('2036-09-20');
+                      }}
+                      className="px-3 py-2 text-[11px] font-black border-2 border-slate-950 bg-yellow-100 hover:bg-yellow-200 rounded-xl transition-all cursor-pointer text-slate-800"
+                      title="User requested target example range"
+                    >
+                      🚀 2025 to 2036 (Exempl)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Date Inputs */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-black text-slate-700 block mb-1.5">Start Date</label>
+                    <input
+                      type="date"
+                      value={downloadStartDate}
+                      onChange={(e) => setDownloadStartDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl text-xs font-black focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-slate-700 block mb-1.5">End Date</label>
+                    <input
+                      type="date"
+                      value={downloadEndDate}
+                      onChange={(e) => setDownloadEndDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl text-xs font-black focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Live Counter Info */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 space-y-1.5">
+                  <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block font-black">
+                    Matching Data Stats in Range
+                  </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-slate-700">
+                    <div>
+                      📹 Scheduled Videos:{' '}
+                      <span className="text-emerald-700 font-extrabold">
+                        {
+                          contentItems.filter(
+                            (item) => item.date && item.date >= downloadStartDate && item.date <= downloadEndDate
+                          ).length
+                        }
+                      </span>
+                    </div>
+                    <div className="hidden sm:block text-slate-300">|</div>
+                    <div>
+                      📋 Tasks checklists:{' '}
+                      <span className="text-indigo-650 font-extrabold">
+                        {
+                          dailyTasks.filter(
+                            (task) => task.date && task.date >= downloadStartDate && task.date <= downloadEndDate
+                          ).length
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t-2 border-slate-950 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDownloadRangeModal(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-xl transition-all cursor-pointer hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadCSVByRange}
+                  className="px-5 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-md cursor-pointer border border-emerald-800 flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Excel/Sheets CSV 📊
                 </button>
               </div>
             </motion.div>

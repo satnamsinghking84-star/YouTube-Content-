@@ -341,18 +341,6 @@ export default function DateRangeContentList({
               </div>
             </div>
           </div>
-          
-          {/* Google Sheets Export Button */}
-          {!isCollapsed && filteredItems.length > 0 && (
-            <button
-              onClick={handleDownloadCSV}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg transition-all active:scale-95 shadow-sm cursor-pointer border border-emerald-800 shrink-0"
-              title="Download structured data CSV to import in Google Sheets"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Google Sheets Download 📊</span>
-            </button>
-          )}
         </div>
 
         {/* Date Range Selector Tab */}
