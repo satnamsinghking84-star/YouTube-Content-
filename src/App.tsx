@@ -1254,6 +1254,26 @@ export default function App() {
       ) : (
         <main className="max-w-7xl w-full mx-auto px-4 md:px-6 mt-6 space-y-6">
           
+          {/* DATE RANGE CONTENT LIST SECTION (Calender ke niche horizontal rows board) */}
+          <section className="space-y-3" id="video-list-section">
+            <DateRangeContentList
+              channels={channels}
+              items={contentItems}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              dailyTasks={dailyTasks}
+              onUpdateItem={async (updatedItem) => {
+                try {
+                  await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                  triggerToast("Video details updated!");
+                } catch (err) {
+                  console.error(err);
+                  triggerToast("Failed to update details", "error");
+                }
+              }}
+            />
+          </section>
+
           {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
           <section className="space-y-3" id="daily-plan-section">
             <DailyPlan
@@ -1288,26 +1308,6 @@ export default function App() {
                 const el = document.getElementById('scheduler-form-section');
                 if (el) {
                   el.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
-            />
-          </section>
-
-          {/* DATE RANGE CONTENT LIST SECTION (Calender ke niche horizontal rows board) */}
-          <section className="space-y-3">
-            <DateRangeContentList
-              channels={channels}
-              items={contentItems}
-              selectedDate={selectedDate}
-              onSelectDate={setSelectedDate}
-              dailyTasks={dailyTasks}
-              onUpdateItem={async (updatedItem) => {
-                try {
-                  await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                  triggerToast("Video details updated!");
-                } catch (err) {
-                  console.error(err);
-                  triggerToast("Failed to update details", "error");
                 }
               }}
             />

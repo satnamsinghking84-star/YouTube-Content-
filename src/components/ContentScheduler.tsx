@@ -54,6 +54,9 @@ export default function ContentScheduler({
   const [description, setDescription] = useState<string>('');
   const [status, setStatus] = useState<ContentScheduleItem['status']>('Draft');
 
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [isModalCompressing, setIsModalCompressing] = useState(false);
+
   // Drag and drop state for thumbnail
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,31 +76,45 @@ export default function ContentScheduler({
   // Downscale image helper for Add Thumbnail
   const processImageFile = (file: File) => {
     if (!file) return;
+    setIsCompressing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxW = 480;
-        const maxH = 270;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement('canvas');
+          const maxW = 480;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > maxW) {
-          height = Math.round((height * maxW) / width);
-          width = maxW;
-        }
-        canvas.width = width;
-        canvas.height = height;
+          if (width > maxW) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          }
+          canvas.width = width;
+          canvas.height = height;
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
-          setThumbnail(compressedBase64);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
+            setThumbnail(compressedBase64);
+          }
+        } catch (err) {
+          console.error("Compression error:", err);
+        } finally {
+          setIsCompressing(false);
         }
       };
+      img.onerror = () => {
+        console.error("Image load failed");
+        setIsCompressing(false);
+      };
       img.src = e.target?.result as string;
+    };
+    reader.onerror = () => {
+      console.error("FileReader failed");
+      setIsCompressing(false);
     };
     reader.readAsDataURL(file);
   };
@@ -105,31 +122,45 @@ export default function ContentScheduler({
   // Downscale image helper for Edit Modal Thumbnail
   const processModalImageFile = (file: File) => {
     if (!file) return;
+    setIsModalCompressing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxW = 480;
-        const maxH = 270;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement('canvas');
+          const maxW = 480;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > maxW) {
-          height = Math.round((height * maxW) / width);
-          width = maxW;
-        }
-        canvas.width = width;
-        canvas.height = height;
+          if (width > maxW) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          }
+          canvas.width = width;
+          canvas.height = height;
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
-          setEditThumbnail(compressedBase64);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
+            setEditThumbnail(compressedBase64);
+          }
+        } catch (err) {
+          console.error("Compression error:", err);
+        } finally {
+          setIsModalCompressing(false);
         }
       };
+      img.onerror = () => {
+        console.error("Image load failed");
+        setIsModalCompressing(false);
+      };
       img.src = e.target?.result as string;
+    };
+    reader.onerror = () => {
+      console.error("FileReader failed");
+      setIsModalCompressing(false);
     };
     reader.readAsDataURL(file);
   };
@@ -463,9 +494,11 @@ export default function ContentScheduler({
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => !isCompressing && fileInputRef.current?.click()}
                   className={`relative border-2 border-dashed rounded-xl h-[100px] flex flex-col items-center justify-center cursor-pointer transition-all ${
-                    isDragOver 
+                    isCompressing
+                      ? 'border-indigo-400 bg-indigo-50/20 cursor-not-allowed'
+                      : isDragOver 
                       ? 'border-indigo-500 bg-indigo-50/50' 
                       : thumbnail 
                       ? 'border-emerald-300 bg-emerald-50/10 hover:border-emerald-400' 
@@ -477,9 +510,15 @@ export default function ContentScheduler({
                     ref={fileInputRef}
                     onChange={handleFileChange}
                     accept="image/*"
+                    disabled={isCompressing}
                     className="hidden"
                   />
-                  {thumbnail ? (
+                  {isCompressing ? (
+                    <div className="text-center px-4 flex flex-col items-center">
+                      <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-1"></div>
+                      <p className="text-[10px] font-black text-indigo-600 animate-pulse">Compressing...</p>
+                    </div>
+                  ) : thumbnail ? (
                     <div className="absolute inset-0 p-1 flex items-center justify-center">
                       <img 
                         src={thumbnail} 
@@ -508,10 +547,15 @@ export default function ContentScheduler({
             <div className="pt-4 border-t border-slate-100 mt-4">
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 font-bold text-white rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100"
+                disabled={isCompressing}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 font-bold text-white rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Plus className="w-4 h-4" />
-                <span>Schedule Video Strategy</span>
+                {isCompressing ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                <span>{isCompressing ? 'Compressing Image...' : 'Schedule Video Strategy'}</span>
               </button>
             </div>
           </form>
@@ -635,9 +679,11 @@ export default function ContentScheduler({
                     onDragOver={handleModalDragOver}
                     onDragLeave={handleModalDragLeave}
                     onDrop={handleModalDrop}
-                    onClick={() => modalFileInputRef.current?.click()}
+                    onClick={() => !isModalCompressing && modalFileInputRef.current?.click()}
                     className={`relative border-2 border-dashed rounded-xl h-[120px] flex flex-col items-center justify-center cursor-pointer transition-all ${
-                      isModalDragOver 
+                      isModalCompressing
+                        ? 'border-indigo-400 bg-indigo-50/20 cursor-not-allowed'
+                        : isModalDragOver 
                         ? 'border-indigo-500 bg-indigo-50/50' 
                         : editThumbnail 
                         ? 'border-emerald-300 bg-emerald-50/10 hover:border-emerald-400' 
@@ -649,9 +695,15 @@ export default function ContentScheduler({
                       ref={modalFileInputRef}
                       onChange={handleModalFileChange}
                       accept="image/*"
+                      disabled={isModalCompressing}
                       className="hidden"
                     />
-                    {editThumbnail ? (
+                    {isModalCompressing ? (
+                      <div className="text-center px-4 flex flex-col items-center">
+                        <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-1"></div>
+                        <p className="text-[10px] font-black text-indigo-600 animate-pulse">Compressing...</p>
+                      </div>
+                    ) : editThumbnail ? (
                       <div className="absolute inset-0 p-1 flex items-center justify-center">
                         <img 
                           src={editThumbnail} 
@@ -678,10 +730,15 @@ export default function ContentScheduler({
                 <div className="pt-4 border-t border-slate-100 mt-4">
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 px-6 py-3 font-bold text-white rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer bg-amber-500 hover:bg-amber-600 shadow-amber-100"
+                    disabled={isModalCompressing}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 font-bold text-white rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer bg-amber-500 hover:bg-amber-600 shadow-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Save Strategy Changes</span>
+                    {isModalCompressing ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Edit3 className="w-4 h-4" />
+                    )}
+                    <span>{isModalCompressing ? 'Compressing Image...' : 'Save Strategy Changes'}</span>
                   </button>
                 </div>
               </form>

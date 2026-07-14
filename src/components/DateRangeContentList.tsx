@@ -51,6 +51,7 @@ export default function DateRangeContentList({
   const [editNotes, setEditNotes] = useState('');
   const [editThumbnail, setEditThumbnail] = useState('');
   const [editDate, setEditDate] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
 
   // Drag and drop states for thumbnail upload in edit modal
   const [isDragOver, setIsDragOver] = useState(false);
@@ -59,31 +60,45 @@ export default function DateRangeContentList({
   // Downscale image helper for Edit Modal Thumbnail
   const processImageFile = (file: File) => {
     if (!file) return;
+    setIsCompressing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxW = 480;
-        const maxH = 270;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement('canvas');
+          const maxW = 480;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > maxW) {
-          height = Math.round((height * maxW) / width);
-          width = maxW;
-        }
-        canvas.width = width;
-        canvas.height = height;
+          if (width > maxW) {
+            height = Math.round((height * maxW) / width);
+            width = maxW;
+          }
+          canvas.width = width;
+          canvas.height = height;
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
-          setEditThumbnail(compressedBase64);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.80);
+            setEditThumbnail(compressedBase64);
+          }
+        } catch (err) {
+          console.error("Compression error:", err);
+        } finally {
+          setIsCompressing(false);
         }
       };
+      img.onerror = () => {
+        console.error("Image load failed");
+        setIsCompressing(false);
+      };
       img.src = e.target?.result as string;
+    };
+    reader.onerror = () => {
+      console.error("FileReader failed");
+      setIsCompressing(false);
     };
     reader.readAsDataURL(file);
   };
@@ -172,6 +187,11 @@ export default function DateRangeContentList({
         return {
           bg: 'bg-teal-50 text-teal-950 border-teal-300',
           label: '📅 Scheduled',
+        };
+      case 'Pending':
+        return {
+          bg: 'bg-rose-50 text-rose-950 border-rose-300',
+          label: '⏳ Pending',
         };
       case 'Editing':
         return {
@@ -620,18 +640,19 @@ export default function DateRangeContentList({
                           <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                             Video Status:
                           </label>
-                          <select
-                            value={editStatus}
-                            onChange={(e) => setEditStatus(e.target.value as ContentScheduleItem['status'])}
-                            className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-black text-slate-800 transition-all cursor-pointer"
-                          >
-                            <option value="Researching">💡 Researching</option>
-                            <option value="Scripting">📝 Scripting</option>
-                            <option value="Recording">🎥 Recording</option>
-                            <option value="Editing">✂️ Editing</option>
-                            <option value="Scheduled">📅 Scheduled</option>
-                            <option value="Published">🚀 Published</option>
-                          </select>
+                            <select
+                              value={editStatus}
+                              onChange={(e) => setEditStatus(e.target.value as ContentScheduleItem['status'])}
+                              className="w-full px-3 py-2.5 bg-slate-50 border-2 border-slate-950 rounded-xl focus:outline-none focus:bg-white text-xs font-black text-slate-800 transition-all cursor-pointer"
+                            >
+                              <option value="Researching">💡 Researching</option>
+                              <option value="Scripting">📝 Scripting</option>
+                              <option value="Recording">🎥 Recording</option>
+                              <option value="Editing">✂️ Editing</option>
+                              <option value="Pending">⏳ Pending</option>
+                              <option value="Scheduled">📅 Scheduled</option>
+                              <option value="Published">🚀 Published</option>
+                            </select>
                         </div>
                       </div>
 
@@ -647,9 +668,11 @@ export default function DateRangeContentList({
                           onDragOver={handleDragOver}
                           onDragLeave={handleDragLeave}
                           onDrop={handleDrop}
-                          onClick={() => fileInputRef.current?.click()}
+                          onClick={() => !isCompressing && fileInputRef.current?.click()}
                           className={`relative border-2 border-dashed rounded-xl h-[120px] flex flex-col items-center justify-center cursor-pointer transition-all ${
-                            isDragOver 
+                            isCompressing
+                              ? 'border-indigo-400 bg-indigo-50/20 cursor-not-allowed'
+                              : isDragOver 
                               ? 'border-indigo-500 bg-indigo-50/50' 
                               : editThumbnail 
                               ? 'border-emerald-300 bg-emerald-50/10 hover:border-emerald-400' 
@@ -661,9 +684,15 @@ export default function DateRangeContentList({
                             ref={fileInputRef}
                             onChange={handleFileChange}
                             accept="image/*"
+                            disabled={isCompressing}
                             className="hidden"
                           />
-                          {editThumbnail ? (
+                          {isCompressing ? (
+                            <div className="text-center px-4 flex flex-col items-center">
+                              <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-1"></div>
+                              <p className="text-[10px] font-black text-indigo-600 animate-pulse">Compressing...</p>
+                            </div>
+                          ) : editThumbnail ? (
                             <div className="absolute inset-0 p-1 flex items-center justify-center">
                               <img 
                                 src={editThumbnail} 
@@ -795,8 +824,129 @@ export default function DateRangeContentList({
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                           Description & Script Outline
                         </span>
-                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-950 text-xs font-semibold text-slate-800 whitespace-pre-wrap leading-relaxed max-h-[160px] overflow-y-auto">
+                        <div className="p-3 bg-slate-50 rounded-xl border-2 border-slate-950 text-xs font-semibold text-slate-800 whitespace-pre-wrap leading-relaxed max-h-[120px] overflow-y-auto">
                           {selectedItemForPreview.description || 'Is video ke liye koi description nahi likha gaya hai.'}
+                        </div>
+                      </div>
+
+                      {/* Status Toggle Buttons (3 Options) */}
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                          Video Status
+                        </span>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: 'Published', label: '🚀 Published', activeClass: 'bg-emerald-500 text-white border-emerald-600 shadow-xs' },
+                            { value: 'Pending', label: '⏳ Pending', activeClass: 'bg-rose-500 text-white border-rose-600 shadow-xs' },
+                            { value: 'Scheduled', label: '📅 Scheduled', activeClass: 'bg-indigo-500 text-white border-indigo-600 shadow-xs' }
+                          ].map((opt) => {
+                            const isActive = selectedItemForPreview.status === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  const updatedItem: ContentScheduleItem = {
+                                    ...selectedItemForPreview,
+                                    status: opt.value as ContentScheduleItem['status']
+                                  };
+                                  setSelectedItemForPreview(updatedItem);
+                                  if (onUpdateItem) {
+                                    onUpdateItem(updatedItem);
+                                  }
+                                }}
+                                className={`py-2 px-1 text-xs font-black rounded-xl border-2 transition-all cursor-pointer text-center ${
+                                  isActive 
+                                    ? opt.activeClass 
+                                    : 'bg-white text-slate-700 border-slate-950 hover:bg-slate-50 shadow-3xs'
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Checklist Options Section */}
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
+                          Video Production Checklist
+                        </span>
+                        
+                        <div className="border-2 border-slate-950 rounded-xl bg-slate-50 p-3 space-y-2 max-h-[220px] overflow-y-auto shadow-3xs">
+                          {(() => {
+                            const checklistOptions = [
+                              { id: 'thumbnail', label: 'Thumbnail' },
+                              { id: 'title', label: 'Title' },
+                              { id: 'description', label: 'Description' },
+                              { id: 'script', label: 'Script' },
+                              { id: 'voiceOver', label: 'Voice over' },
+                              { id: 'fullVideoReady', label: 'Full video ready' },
+                            ];
+                            
+                            const sortedOptions = [...checklistOptions].sort((a, b) => {
+                              const valA = !!(selectedItemForPreview.checklists?.[a.id as keyof typeof selectedItemForPreview.checklists]);
+                              const valB = !!(selectedItemForPreview.checklists?.[b.id as keyof typeof selectedItemForPreview.checklists]);
+                              if (valA === valB) return 0;
+                              return valA ? 1 : -1; // Unchecked (false) first, checked (true) last
+                            });
+
+                            return sortedOptions.map((opt) => {
+                              const isChecked = !!(selectedItemForPreview.checklists?.[opt.id as keyof typeof selectedItemForPreview.checklists]);
+                              
+                              return (
+                                <div
+                                  key={opt.id}
+                                  onClick={() => {
+                                    const currentChecklists = selectedItemForPreview.checklists || {};
+                                    const updatedChecklists = {
+                                      ...currentChecklists,
+                                      [opt.id]: !isChecked,
+                                    };
+                                    const updatedItem: ContentScheduleItem = {
+                                      ...selectedItemForPreview,
+                                      checklists: updatedChecklists,
+                                    };
+                                    setSelectedItemForPreview(updatedItem);
+                                    if (onUpdateItem) {
+                                      onUpdateItem(updatedItem);
+                                    }
+                                  }}
+                                  className={`flex items-center justify-between p-2.5 rounded-lg border-2 cursor-pointer transition-all select-none active:scale-[0.99] ${
+                                    isChecked
+                                      ? 'bg-emerald-50/40 border-emerald-300 text-slate-500 line-through'
+                                      : 'bg-white border-rose-300 hover:border-rose-400 text-rose-950 shadow-3xs'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5">
+                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                                      isChecked
+                                        ? 'bg-emerald-500 border-emerald-600 text-white'
+                                        : 'border-rose-400 bg-rose-50/50 text-rose-500'
+                                    }`}>
+                                      {isChecked && (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <span className="text-xs font-black">
+                                      {opt.label}
+                                    </span>
+                                  </div>
+                                  
+                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border transition-all ${
+                                    isChecked 
+                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                                      : 'bg-rose-100 text-rose-800 border-rose-200'
+                                  }`}>
+                                    {isChecked ? 'Complete' : 'Pending'}
+                                  </span>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
 
@@ -824,17 +974,23 @@ export default function DateRangeContentList({
                       <button
                         type="button"
                         onClick={() => setIsEditing(false)}
-                        className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-950 text-xs font-black rounded-xl border-2 border-slate-950 cursor-pointer active:scale-95 transition-all"
+                        disabled={isCompressing}
+                        className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-950 text-xs font-black rounded-xl border-2 border-slate-950 cursor-pointer active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Cancel
                       </button>
                       <button
                         type="button"
                         onClick={handleSaveEdit}
-                        className="flex items-center gap-1.5 px-5 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl border border-slate-950 cursor-pointer active:scale-95 transition-all shadow-sm"
+                        disabled={isCompressing}
+                        className="flex items-center gap-1.5 px-5 py-2 bg-slate-950 hover:bg-slate-900 text-white text-xs font-black rounded-xl border border-slate-950 cursor-pointer active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Save className="w-4 h-4" />
-                        <span>Save Changes</span>
+                        {isCompressing ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        <span>{isCompressing ? 'Compressing...' : 'Save Changes'}</span>
                       </button>
                     </>
                   ) : (

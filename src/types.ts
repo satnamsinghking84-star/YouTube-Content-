@@ -12,8 +12,16 @@ export interface ContentScheduleItem {
   thumbnail: string; // base64 string or empty
   title: string;
   description: string;
-  status: 'Draft' | 'Researching' | 'Scripting' | 'Recording' | 'Editing' | 'Scheduled' | 'Published';
+  status: 'Draft' | 'Researching' | 'Scripting' | 'Recording' | 'Editing' | 'Scheduled' | 'Published' | 'Pending';
   notes?: string;
+  checklists?: {
+    thumbnail?: boolean;
+    title?: boolean;
+    description?: boolean;
+    script?: boolean;
+    voiceOver?: boolean;
+    fullVideoReady?: boolean;
+  };
 }
 
 export interface DailyPlanningTask {
