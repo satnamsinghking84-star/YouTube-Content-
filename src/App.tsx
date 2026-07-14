@@ -11,13 +11,17 @@ import {
   Video,
   FileText,
   Clock,
-  Edit3
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  Edit2
 } from 'lucide-react';
 import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types';
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
 import DateRangeContentList from './components/DateRangeContentList';
+import ChannelIdeasWorkspace from './components/ChannelIdeasWorkspace';
 import { 
   collection, 
   onSnapshot, 
@@ -86,6 +90,9 @@ export default function App() {
   // --- Persistent States from Local Storage / Firebase ---
   const [channels, setChannels] = useState<YouTubeChannel[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlChanId = urlParams.get('channelId');
+    if (urlChanId) return urlChanId;
     return localStorage.getItem('yt_active_channel_id') || '';
   });
   const [contentItems, setContentItems] = useState<ContentScheduleItem[]>([]);
@@ -97,24 +104,29 @@ export default function App() {
 
   // --- UI Interactive States ---
   const [showAddChannelModal, setShowAddChannelModal] = useState(false);
+  const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState(false);
+  
+  // Check if we are inside the Ideas Workspace view from the URL parameter
+  const isIdeasWorkspace = new URLSearchParams(window.location.search).get('view') === 'ideas';
+
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelHandle, setNewChannelHandle] = useState('');
   const [selectedAvatarColor, setSelectedAvatarColor] = useState(PRESET_AVATAR_COLORS[0]);
 
   // --- Channel Edit States ---
   const [showEditChannelModal, setShowEditChannelModal] = useState(false);
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [editChannelName, setEditChannelName] = useState('');
   const [editChannelHandle, setEditChannelHandle] = useState('');
   const [editSelectedAvatarColor, setEditSelectedAvatarColor] = useState(PRESET_AVATAR_COLORS[0]);
   const [channelToDelete, setChannelToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  const openEditChannelModal = () => {
-    if (activeChannel) {
-      setEditChannelName(activeChannel.name);
-      setEditChannelHandle(activeChannel.handle);
-      setEditSelectedAvatarColor(activeChannel.avatarColor);
-      setShowEditChannelModal(true);
-    }
+  const openEditChannelModal = (chan: YouTubeChannel) => {
+    setEditingChannelId(chan.id);
+    setEditChannelName(chan.name);
+    setEditChannelHandle(chan.handle);
+    setEditSelectedAvatarColor(chan.avatarColor);
+    setShowEditChannelModal(true);
   };
 
   // Alert & Notification toast states
@@ -334,22 +346,24 @@ export default function App() {
 
   const handleUpdateChannel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editChannelName.trim() || !activeChannelId) return;
+    const targetId = editingChannelId || activeChannelId;
+    if (!editChannelName.trim() || !targetId) return;
 
     const handle = editChannelHandle.trim() 
       ? (editChannelHandle.startsWith('@') ? editChannelHandle : `@${editChannelHandle}`)
       : `@${editChannelName.toLowerCase().replace(/\s+/g, '')}`;
 
     const updatedChan: YouTubeChannel = {
-      id: activeChannelId,
+      id: targetId,
       name: editChannelName.trim(),
       handle,
       avatarColor: editSelectedAvatarColor
     };
 
     try {
-      await setDoc(doc(db, 'channels', activeChannelId), updatedChan);
+      await setDoc(doc(db, 'channels', targetId), updatedChan);
       setShowEditChannelModal(false);
+      setEditingChannelId(null);
       triggerToast(`"${updatedChan.name}" updated successfully!`);
     } catch (err) {
       console.error(err);
@@ -418,61 +432,144 @@ export default function App() {
             </div>
           </div>
 
-          {/* Inline Channel Selector and Add Button */}
-          <div className="flex flex-wrap items-center gap-2">
-            
-            {/* Custom styled select box */}
+          {/* Custom Channel Selector Container */}
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            {/* Inline Custom Channel Selector Dropdown */}
             <div className="relative">
-              <select
-                value={activeChannelId}
-                onChange={(e) => {
-                  setActiveChannelId(e.target.value);
-                  triggerToast(`Switched channel to ${channels.find(c => c.id === e.target.value)?.name}`);
-                }}
-                className="pl-3 pr-8 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 font-bold text-xs rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer appearance-none min-w-[160px]"
-              >
-                {channels.map((chan) => (
-                  <option key={chan.id} value={chan.id}>
-                    {chan.name} {chan.handle}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-500">
-                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                  <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
-                </svg>
-              </div>
-            </div>
-
-            {/* Edit current channel button */}
-            {activeChannel && (
               <button
-                onClick={openEditChannelModal}
-                className="p-2.5 text-slate-450 hover:text-indigo-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-indigo-50 hover:border-indigo-100 transition-all cursor-pointer"
-                title="Edit current channel details"
+                onClick={() => setIsChannelDropdownOpen(!isChannelDropdownOpen)}
+                className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border-2 border-slate-950 rounded-xl transition-all cursor-pointer select-none active:scale-95"
               >
-                <Edit3 className="w-4 h-4" />
+                <div 
+                  className="w-3.5 h-3.5 rounded-full shrink-0 border border-slate-950" 
+                  style={{ backgroundColor: activeChannel?.avatarColor || '#6366f1' }}
+                />
+                <div className="flex flex-col text-left min-w-0">
+                  <span className="text-xs font-black text-slate-950 truncate max-w-[120px] sm:max-w-[180px]">
+                    {activeChannel?.name || 'Loading...'}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold tracking-tight truncate max-w-[120px]">
+                    {activeChannel?.handle || ''}
+                  </span>
+                </div>
+                {isChannelDropdownOpen ? (
+                  <ChevronUp className="w-4 h-4 text-slate-950 shrink-0 ml-1" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-950 shrink-0 ml-1" />
+                )}
               </button>
-            )}
 
-            {/* Delete current channel button */}
-            <button
-              onClick={() => handleDeleteChannel(activeChannel.id, activeChannel.name)}
-              className="p-2.5 text-slate-400 hover:text-rose-600 bg-slate-50 border border-slate-200 rounded-xl hover:bg-rose-50 hover:border-rose-100 transition-all cursor-pointer"
-              title="Delete current channel and all its data"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+              {/* Dropdown Menu Popup */}
+              <AnimatePresence>
+                {isChannelDropdownOpen && (
+                  <>
+                    {/* Backdrop overlay to close when clicking outside */}
+                    <div 
+                      className="fixed inset-0 z-40 bg-transparent" 
+                      onClick={() => setIsChannelDropdownOpen(false)} 
+                    />
+                    
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border-2 border-slate-950 rounded-2xl shadow-xl z-50 overflow-hidden"
+                    >
+                      {/* Header */}
+                      <div className="px-4 py-3 bg-slate-50 border-b-2 border-slate-950">
+                        <span className="text-[10px] uppercase font-black tracking-wider text-slate-500">
+                          Choose Channel Workspace
+                        </span>
+                      </div>
 
-            {/* Quick Add Channel Action */}
-            <button
-              onClick={() => setShowAddChannelModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl shadow-md shadow-indigo-100 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Channel</span>
-            </button>
+                      {/* Channel List */}
+                      <div className="p-2 space-y-1 max-h-[240px] overflow-y-auto">
+                        {channels.map((chan) => {
+                          const isActive = chan.id === activeChannelId;
+                          return (
+                            <div
+                              key={chan.id}
+                              className={`group flex items-center justify-between p-2 rounded-xl transition-all border border-transparent ${
+                                isActive 
+                                  ? 'bg-indigo-50 border-indigo-200' 
+                                  : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              {/* Clickable Area to Switch Channel */}
+                              <div
+                                onClick={() => {
+                                  setActiveChannelId(chan.id);
+                                  setIsChannelDropdownOpen(false);
+                                  triggerToast(`Switched channel to ${chan.name}`);
+                                }}
+                                className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer text-left"
+                              >
+                                <div 
+                                  className="w-4 h-4 rounded-full shrink-0 border border-slate-950 shadow-sm"
+                                  style={{ backgroundColor: chan.avatarColor }}
+                               />
+                                <div className="min-w-0 flex-1">
+                                  <p className={`text-xs truncate font-black ${isActive ? 'text-indigo-900' : 'text-slate-900'}`}>
+                                    {chan.name}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 font-bold truncate">
+                                    {chan.handle}
+                                  </p>
+                                </div>
+                              </div>
 
+                              {/* Row Action Buttons (Edit / Delete) */}
+                              <div className="flex items-center gap-1 shrink-0 ml-2">
+                                {/* Edit Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditChannelModal(chan);
+                                    setIsChannelDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 text-slate-500 hover:text-indigo-600 transition-all cursor-pointer"
+                                  title={`Edit ${chan.name}`}
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteChannel(chan.id, chan.name);
+                                    setIsChannelDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-100 text-slate-400 hover:text-rose-600 transition-all cursor-pointer"
+                                  title={`Delete ${chan.name}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Footer - Add Channel Action */}
+                      <div className="p-2 bg-slate-50 border-t-2 border-slate-950">
+                        <button
+                          onClick={() => {
+                            setShowAddChannelModal(true);
+                            setIsChannelDropdownOpen(false);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs rounded-xl shadow transition-all cursor-pointer border border-indigo-700"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add New Channel</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
         </div>
@@ -701,110 +798,117 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* --- MAIN STRATEGY CONTAINER (Daily Plan first, then Calendar, then Scheduler Details) --- */}
-      <main className="max-w-7xl w-full mx-auto px-4 md:px-6 mt-6 space-y-6">
-        
-        {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
-        <section className="space-y-3" id="daily-plan-section">
-          <DailyPlan
-            channels={channels}
-            channelId={activeChannelId}
-            selectedDate={selectedDate}
-            dailyTasks={dailyTasks}
-            items={contentItems}
-            onAddTask={handleAddTask}
-            onToggleTask={handleToggleTask}
-            onDeleteTask={handleDeleteTask}
-          />
-        </section>
+      {/* --- CONTENT WORKSPACE OR MAIN DASHBOARD CONTENT --- */}
+      {isIdeasWorkspace ? (
+        <ChannelIdeasWorkspace
+          activeChannel={activeChannel}
+          triggerToast={triggerToast}
+        />
+      ) : (
+        <main className="max-w-7xl w-full mx-auto px-4 md:px-6 mt-6 space-y-6">
+          
+          {/* DAILY PLAN CHECKLIST SECTION (Sabse Upar) */}
+          <section className="space-y-3" id="daily-plan-section">
+            <DailyPlan
+              channels={channels}
+              channelId={activeChannelId}
+              selectedDate={selectedDate}
+              dailyTasks={dailyTasks}
+              items={contentItems}
+              onAddTask={handleAddTask}
+              onToggleTask={handleToggleTask}
+              onDeleteTask={handleDeleteTask}
+            />
+          </section>
 
-        {/* CALENDAR SECTION (Pura Box Ke Andar) */}
-        <section className="space-y-3">
-          <ContentCalendar
-            channelId={activeChannelId}
-            items={contentItems}
-            selectedDate={selectedDate}
-            dailyTasks={dailyTasks}
-            onSelectDate={(date) => {
-              setSelectedDate(date);
-              // Scroll to today's plan checklist smoothly
-              const el = document.getElementById('daily-plan-section');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth' });
-              }
-            }}
-            onQuickAddForDate={(date) => {
-              setSelectedDate(date);
-              const el = document.getElementById('scheduler-form-section');
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth' });
-              }
-            }}
-          />
-        </section>
-
-        {/* DATE RANGE CONTENT LIST SECTION (Calender ke niche horizontal rows board) */}
-        <section className="space-y-3">
-          <DateRangeContentList
-            channels={channels}
-            items={contentItems}
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            dailyTasks={dailyTasks}
-            onUpdateItem={async (updatedItem) => {
-              try {
-                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                triggerToast("Video details updated!");
-              } catch (err) {
-                console.error(err);
-                triggerToast("Failed to update details", "error");
-              }
-            }}
-          />
-        </section>
-
-        {/* DETAILS SECTION (Dynamic scheduling planner & list for the selected calendar date) */}
-        <section>
-          <ContentScheduler
-            channelId={activeChannelId}
-            channelName={activeChannel?.name || 'My Channel'}
-            items={contentItems}
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            onAddItem={async (item) => {
-              try {
-                await setDoc(doc(db, 'content_items', item.id), item);
-                triggerToast(`"${item.title}" scheduled successfully!`);
-              } catch (err) {
-                console.error(err);
-                triggerToast("Failed to save content item", "error");
-              }
-            }}
-            onDeleteItem={async (id) => {
-              const itemToDelete = contentItems.find(item => item.id === id);
-              try {
-                await deleteDoc(doc(db, 'content_items', id));
-                if (itemToDelete) {
-                  triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
+          {/* CALENDAR SECTION (Pura Box Ke Andar) */}
+          <section className="space-y-3">
+            <ContentCalendar
+              channelId={activeChannelId}
+              items={contentItems}
+              selectedDate={selectedDate}
+              dailyTasks={dailyTasks}
+              onSelectDate={(date) => {
+                setSelectedDate(date);
+                // Scroll to today's plan checklist smoothly
+                const el = document.getElementById('daily-plan-section');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
                 }
-              } catch (err) {
-                console.error(err);
-                triggerToast("Failed to delete content item", "error");
-              }
-            }}
-            onUpdateItem={async (updatedItem) => {
-              try {
-                await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
-                triggerToast("Video details updated!");
-              } catch (err) {
-                console.error(err);
-                triggerToast("Failed to update details", "error");
-              }
-            }}
-          />
-        </section>
+              }}
+              onQuickAddForDate={(date) => {
+                setSelectedDate(date);
+                const el = document.getElementById('scheduler-form-section');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            />
+          </section>
 
-      </main>
+          {/* DATE RANGE CONTENT LIST SECTION (Calender ke niche horizontal rows board) */}
+          <section className="space-y-3">
+            <DateRangeContentList
+              channels={channels}
+              items={contentItems}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              dailyTasks={dailyTasks}
+              onUpdateItem={async (updatedItem) => {
+                try {
+                  await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                  triggerToast("Video details updated!");
+                } catch (err) {
+                  console.error(err);
+                  triggerToast("Failed to update details", "error");
+                }
+              }}
+            />
+          </section>
+
+          {/* DETAILS SECTION (Dynamic scheduling planner & list for the selected calendar date) */}
+          <section>
+            <ContentScheduler
+              channelId={activeChannelId}
+              channelName={activeChannel?.name || 'My Channel'}
+              items={contentItems}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              onAddItem={async (item) => {
+                try {
+                  await setDoc(doc(db, 'content_items', item.id), item);
+                  triggerToast(`"${item.title}" scheduled successfully!`);
+                } catch (err) {
+                  console.error(err);
+                  triggerToast("Failed to save content item", "error");
+                }
+              }}
+              onDeleteItem={async (id) => {
+                const itemToDelete = contentItems.find(item => item.id === id);
+                try {
+                  await deleteDoc(doc(db, 'content_items', id));
+                  if (itemToDelete) {
+                    triggerToast(`Deleted "${itemToDelete.title}" strategy.`, 'info');
+                  }
+                } catch (err) {
+                  console.error(err);
+                  triggerToast("Failed to delete content item", "error");
+                }
+              }}
+              onUpdateItem={async (updatedItem) => {
+                try {
+                  await setDoc(doc(db, 'content_items', updatedItem.id), updatedItem);
+                  triggerToast("Video details updated!");
+                } catch (err) {
+                  console.error(err);
+                  triggerToast("Failed to update details", "error");
+                }
+              }}
+            />
+          </section>
+
+        </main>
+      )}
     </div>
   );
 }

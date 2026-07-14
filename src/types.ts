@@ -24,3 +24,13 @@ export interface DailyPlanningTask {
   isCompleted: boolean;
   targetTime?: string; // Optional daily deadline/target time (e.g. "12:00 PM")
 }
+
+export interface ChannelIdea {
+  id: string;
+  channelId: string;
+  number: string; // User-inputted number
+  title: string;
+  shortDescription: string;
+  createdAt: string; // Timestamp
+}
+
