@@ -105,7 +105,7 @@ export default function ChannelIdeasWorkspace({
   const formulaInputRef = useRef<HTMLInputElement>(null);
  
   // --- Google Sheets Integration States ---
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [googleUser, setGoogleUser] = useState<{ email: string; name?: string } | null>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [googleSheetUrl, setGoogleSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1dNtaSrKM7ymzolqw5paZuKlQ4CKGxRuMqK-3M8VN8Lw/edit?usp=drivesdk');
   const [isUrlEditing, setIsUrlEditing] = useState(false);
@@ -120,12 +120,92 @@ export default function ChannelIdeasWorkspace({
     onConfirm: () => void;
   } | null>(null);
 
-  // Listen to Firebase Auth state for Google account connection
+  // Listen for Google OAuth callback hash (for popup context)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (usr) => {
-      setGoogleUser(usr);
-    });
-    return () => unsubscribe();
+    const handleHash = async () => {
+      const hash = window.location.hash;
+      if (hash && hash.includes('access_token=')) {
+        const params = new URLSearchParams(hash.replace('#', '?'));
+        const token = params.get('access_token');
+        if (token) {
+          // If this is the popup window, send token to parent and close
+          if (window.opener) {
+            try {
+              window.opener.postMessage({ type: 'GOOGLE_OAUTH_SUCCESS', token }, window.location.origin);
+              window.close();
+              return;
+            } catch (e) {
+              console.error("Failed to post message to opener:", e);
+            }
+          }
+          
+          // Fallback: If redirected directly in main window, clean hash and load user info
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          setSheetSyncing(true);
+          try {
+            const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.ok) {
+              const userInfo = await res.json();
+              setGoogleAccessToken(token);
+              setGoogleUser({
+                email: userInfo.email || 'Google User',
+                name: userInfo.name || 'Google User'
+              });
+              triggerToast("Google Sheets connected successfully!", "success");
+            } else {
+              triggerToast("Failed to retrieve Google user info.", "error");
+            }
+          } catch (err) {
+            console.error("Failed to fetch user info:", err);
+            setGoogleAccessToken(token);
+            setGoogleUser({ email: 'Google User', name: 'Google User' });
+            triggerToast("Google Sheets connected!", "success");
+          } finally {
+            setSheetSyncing(false);
+          }
+        }
+      }
+    };
+    
+    handleHash();
+  }, []);
+
+  // Listen for message events from popups in the parent window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.type === 'GOOGLE_OAUTH_SUCCESS') {
+        const token = event.data.token;
+        if (token) {
+          setGoogleAccessToken(token);
+          setSheetSyncing(true);
+          fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          .then(res => res.json())
+          .then(userInfo => {
+            setGoogleUser({
+              email: userInfo.email || 'Google User',
+              name: userInfo.name || 'Google User'
+            });
+            triggerToast("Google Sheets connected successfully!", "success");
+          })
+          .catch(err => {
+            console.error("Failed to fetch user info:", err);
+            setGoogleUser({ email: 'Google User', name: 'Google User' });
+            triggerToast("Google Sheets connected successfully!", "success");
+          })
+          .finally(() => {
+            setSheetSyncing(false);
+          });
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   // Fetch sheet URL config from Firestore if it exists
@@ -152,47 +232,86 @@ export default function ChannelIdeasWorkspace({
     loadSheetConfig();
   }, [activeChannel?.id]);
 
-  const handleConnectGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-    provider.addScope('https://www.googleapis.com/auth/userinfo.email');
-    provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+  const handleConnectGoogle = () => {
+    setSheetSyncing(true);
+    const clientId = "999666245323-ur5k7ai2c77bj4b01hah2sik0p22h2k6.apps.googleusercontent.com";
+    const redirectUri = window.location.origin;
+    const scope = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
     
-    try {
-      setSheetSyncing(true);
-      const result = await signInWithPopup(auth, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setGoogleAccessToken(credential.accessToken);
-        setGoogleUser(result.user);
-        triggerToast("Google Sheets connected successfully!", "success");
-      } else {
-        triggerToast("Connected, but could not retrieve access token.", "error");
-      }
-    } catch (err: any) {
-      console.error("Google Auth failed:", err);
-      if (err.code === 'auth/popup-closed-by-user' || String(err.message).includes('popup-closed-by-user')) {
-        triggerToast("Login window closed. Please try again!", "error");
-      } else if (err.code === 'auth/unauthorized-domain' || String(err.message).includes('unauthorized-domain')) {
-        triggerToast("This domain is unauthorized. Please verify your OAuth setup.", "error");
-      } else {
-        triggerToast(`Connection failed: ${err.message}`, "error");
-      }
-    } finally {
-      setSheetSyncing(false);
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
+    
+    // Open a popup
+    const popup = window.open(authUrl, 'GoogleAuth', 'width=500,height=600');
+    
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      // Fallback to direct redirect if popup is blocked
+      triggerToast("Popup blocked! Redirecting to Google Login...", "info");
+      setTimeout(() => {
+        window.location.href = authUrl;
+      }, 1000);
+      return;
     }
+    
+    const pollTimer = setInterval(() => {
+      try {
+        if (!popup || popup.closed) {
+          clearInterval(pollTimer);
+          setSheetSyncing(false);
+          return;
+        }
+        
+        let popupUrl = "";
+        try {
+          popupUrl = popup.location.href;
+        } catch (e) {
+          // Cross-origin errors are expected and silent while the popup is on accounts.google.com
+        }
+        
+        if (popupUrl && popupUrl.includes(window.location.origin)) {
+          clearInterval(pollTimer);
+          const hash = popup.location.hash;
+          popup.close();
+          
+          const params = new URLSearchParams(hash.replace('#', '?'));
+          const token = params.get('access_token');
+          if (token) {
+            setGoogleAccessToken(token);
+            setSheetSyncing(true);
+            
+            fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+            .then(res => res.json())
+            .then(userInfo => {
+              setGoogleUser({
+                email: userInfo.email || 'Google User',
+                name: userInfo.name || 'Google User'
+              });
+              triggerToast("Google Sheets connected successfully!", "success");
+            })
+            .catch(err => {
+              console.error("Failed to fetch user info:", err);
+              setGoogleUser({ email: 'Google User', name: 'Google User' });
+              triggerToast("Google Sheets connected successfully!", "success");
+            })
+            .finally(() => {
+              setSheetSyncing(false);
+            });
+          } else {
+            setSheetSyncing(false);
+            triggerToast("Failed to connect: Access token not found in response.", "error");
+          }
+        }
+      } catch (err) {
+        // Cross-origin fallback
+      }
+    }, 500);
   };
 
-  const handleDisconnectGoogle = async () => {
-    try {
-      await signOut(auth);
-      setGoogleAccessToken(null);
-      setGoogleUser(null);
-      triggerToast("Disconnected from Google Sheets", "info");
-    } catch (err: any) {
-      console.error("Disconnect failed:", err);
-      triggerToast("Disconnect failed", "error");
-    }
+  const handleDisconnectGoogle = () => {
+    setGoogleAccessToken(null);
+    setGoogleUser(null);
+    triggerToast("Disconnected from Google Sheets", "info");
   };
 
   const getSpreadsheetId = (url: string): string | null => {
