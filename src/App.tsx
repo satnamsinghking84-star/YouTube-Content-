@@ -19,7 +19,7 @@ import {
   Download,
   FileSpreadsheet
 } from 'lucide-react';
-import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask } from './types';
+import { YouTubeChannel, ContentScheduleItem, DailyPlanningTask, ChannelIdea } from './types';
 import ContentCalendar from './components/ContentCalendar';
 import ContentScheduler from './components/ContentScheduler';
 import DailyPlan from './components/DailyPlan';
@@ -121,6 +121,14 @@ export default function App() {
       return [];
     }
   });
+  const [ideas, setIdeas] = useState<ChannelIdea[]>(() => {
+    try {
+      const cached = localStorage.getItem('cache_ideas_all');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date(2026, 6, 13).toISOString().split('T')[0];
   });
@@ -191,13 +199,15 @@ export default function App() {
     let unsubscribeChannels: () => void;
     let unsubscribeContent: () => void;
     let unsubscribeTasks: () => void;
+    let unsubscribeIdeas: () => void;
 
     let channelsDone = false;
     let contentDone = false;
     let tasksDone = false;
+    let ideasDone = false;
 
     const checkAllLoaded = () => {
-      if (channelsDone && contentDone && tasksDone) {
+      if (channelsDone && contentDone && tasksDone && ideasDone) {
         setLoading(false);
       }
     };
@@ -269,6 +279,25 @@ export default function App() {
       checkAllLoaded();
     });
 
+    unsubscribeIdeas = onSnapshot(collection(db, 'ideas'), (snapshot) => {
+      const loadedIdeas: ChannelIdea[] = [];
+      snapshot.forEach((doc) => {
+        loadedIdeas.push(doc.data() as ChannelIdea);
+      });
+      setIdeas(loadedIdeas);
+      try {
+        localStorage.setItem('cache_ideas_all', JSON.stringify(loadedIdeas));
+      } catch (e) {
+        console.error(e);
+      }
+      ideasDone = true;
+      checkAllLoaded();
+    }, (error) => {
+      console.error("Ideas snapshot error: ", error);
+      ideasDone = true;
+      checkAllLoaded();
+    });
+
     // Run background seeding check asynchronously so it doesn't block UI load
     const checkAndSeed = async () => {
       try {
@@ -304,6 +333,7 @@ export default function App() {
       if (unsubscribeChannels) unsubscribeChannels();
       if (unsubscribeContent) unsubscribeContent();
       if (unsubscribeTasks) unsubscribeTasks();
+      if (unsubscribeIdeas) unsubscribeIdeas();
     };
   }, []);
 
@@ -539,6 +569,43 @@ export default function App() {
       const status = task.isCompleted ? 'Completed \u2705' : 'Pending \u23F3';
 
       csvParts.push(`"${id}","${text}","${channelName}","${date}","${status}"`);
+    });
+
+    csvParts.push(''); // Empty row divider
+    csvParts.push(''); // Empty row divider
+
+    // --- SECTION 4: CHANNEL IDEAS & WORKSPACE (IDEA TAB) ---
+    csvParts.push(`=== SECTION 4: CHANNEL IDEAS & WORKSPACE (${ideas.length} found) ===`);
+    csvParts.push('Idea ID,Idea Number,Idea Title,Channel Name,Short Description,Status (Completed/Pending),Created Timestamp');
+    
+    // Sort ideas by channel and number/createdAt
+    const sortedIdeas = [...ideas].sort((a, b) => {
+      const chanA = channels.find(c => c.id === a.channelId)?.name || '';
+      const chanB = channels.find(c => c.id === b.channelId)?.name || '';
+      if (chanA !== chanB) return chanA.localeCompare(chanB);
+
+      const compA = a.isCompleted ? 1 : 0;
+      const compB = b.isCompleted ? 1 : 0;
+      if (compA !== compB) return compA - compB;
+
+      const numA = parseFloat(a.number) || 0;
+      const numB = parseFloat(b.number) || 0;
+      if (numA !== numB) return numA - numB;
+      return (a.createdAt || '').localeCompare(b.createdAt || '');
+    });
+
+    sortedIdeas.forEach(idea => {
+      const channel = channels.find(c => c.id === idea.channelId);
+      const channelName = channel ? channel.name : 'Unknown Channel';
+
+      const id = (idea.id || '').replace(/"/g, '""');
+      const num = (idea.number || '').replace(/"/g, '""');
+      const title = (idea.title || '').replace(/"/g, '""');
+      const desc = (idea.shortDescription || '').replace(/"/g, '""');
+      const status = idea.isCompleted ? 'Completed \u2705' : 'Pending \u23F3';
+      const created = (idea.createdAt || '').replace(/"/g, '""');
+
+      csvParts.push(`"${id}","${num}","${title}","${channelName}","${desc}","${status}","${created}"`);
     });
 
     const csvContent = csvParts.join('\n');
@@ -1109,14 +1176,14 @@ export default function App() {
                 </div>
 
                 {/* Live Counter Info */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 space-y-1.5">
+                <div className="p-3.5 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 space-y-2">
                   <span className="text-[9px] uppercase font-extrabold tracking-wider text-slate-400 block font-black">
-                    Matching Data Stats in Range
+                    Matching Data Stats (will be exported together)
                   </span>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-slate-700">
-                    <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-bold text-slate-700">
+                    <div className="bg-white px-3 py-2 rounded-lg border border-slate-200">
                       📹 Scheduled Videos:{' '}
-                      <span className="text-emerald-700 font-extrabold">
+                      <span className="text-emerald-700 font-black">
                         {
                           contentItems.filter(
                             (item) => item.date && item.date >= downloadStartDate && item.date <= downloadEndDate
@@ -1124,15 +1191,20 @@ export default function App() {
                         }
                       </span>
                     </div>
-                    <div className="hidden sm:block text-slate-300">|</div>
-                    <div>
-                      📋 Tasks checklists:{' '}
-                      <span className="text-indigo-650 font-extrabold">
+                    <div className="bg-white px-3 py-2 rounded-lg border border-slate-200">
+                      📋 Daily Checklists:{' '}
+                      <span className="text-indigo-600 font-black">
                         {
                           dailyTasks.filter(
                             (task) => task.date && task.date >= downloadStartDate && task.date <= downloadEndDate
                           ).length
                         }
+                      </span>
+                    </div>
+                    <div className="bg-white px-3 py-2 rounded-lg border border-slate-200" title="All Workspace ideas are exported together">
+                      💡 Channel Ideas:{' '}
+                      <span className="text-yellow-600 font-black">
+                        {ideas.length}
                       </span>
                     </div>
                   </div>
