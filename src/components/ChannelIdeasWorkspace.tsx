@@ -190,9 +190,12 @@ export default function ChannelIdeasWorkspace({
     const targetRow = sheetRows[rowIndex];
     if (!targetRow) return;
 
-    const currentVal = targetRow[colKey];
-    if (currentVal === newValue) {
-      return; // No change
+    // Look up original value from the database source of truth (ideas)
+    const originalIdea = targetRow.id ? ideas.find(i => i.id === targetRow.id) : null;
+    const dbValue = originalIdea ? (originalIdea[colKey] || '') : '';
+
+    if (dbValue === newValue) {
+      return; // No change compared to database
     }
 
     // Local update first
@@ -203,9 +206,9 @@ export default function ChannelIdeasWorkspace({
     };
     setSheetRows(updatedRows);
 
-    const finalNumber = colKey === 'number' ? newValue.trim() : targetRow.number.trim();
-    const finalTitle = colKey === 'title' ? newValue.trim() : targetRow.title.trim();
-    const finalDesc = colKey === 'shortDescription' ? newValue.trim() : targetRow.shortDescription.trim();
+    const finalNumber = colKey === 'number' ? newValue.trim() : (targetRow.number || '').trim();
+    const finalTitle = colKey === 'title' ? newValue.trim() : (targetRow.title || '').trim();
+    const finalDesc = colKey === 'shortDescription' ? newValue.trim() : (targetRow.shortDescription || '').trim();
 
     const isRowTotallyEmpty = !finalTitle && !finalDesc;
 
@@ -625,9 +628,6 @@ export default function ChannelIdeasWorkspace({
                         style={{ width: `${colWidthA}px` }}
                         onClick={() => {
                           setSelectedCell({ rowIndex: rIdx, colKey: 'number' });
-                        }}
-                        onDoubleClick={() => {
-                          setSelectedCell({ rowIndex: rIdx, colKey: 'number' });
                           setInlineEditingCell({ rowIndex: rIdx, colKey: 'number' });
                         }}
                       >
@@ -677,9 +677,6 @@ export default function ChannelIdeasWorkspace({
                         }`}
                         style={{ width: `${colWidthB}px` }}
                         onClick={() => {
-                          setSelectedCell({ rowIndex: rIdx, colKey: 'title' });
-                        }}
-                        onDoubleClick={() => {
                           setSelectedCell({ rowIndex: rIdx, colKey: 'title' });
                           setInlineEditingCell({ rowIndex: rIdx, colKey: 'title' });
                         }}
@@ -731,9 +728,6 @@ export default function ChannelIdeasWorkspace({
                         }`}
                         style={{ width: `${colWidthC}px` }}
                         onClick={() => {
-                          setSelectedCell({ rowIndex: rIdx, colKey: 'shortDescription' });
-                        }}
-                        onDoubleClick={() => {
                           setSelectedCell({ rowIndex: rIdx, colKey: 'shortDescription' });
                           setInlineEditingCell({ rowIndex: rIdx, colKey: 'shortDescription' });
                         }}
@@ -821,7 +815,7 @@ export default function ChannelIdeasWorkspace({
               ref={formulaInputRef}
               type="text"
               disabled={!selectedCell}
-              placeholder={selectedCell ? "Type cell content & click the green Checkmark to save..." : "Select any grid cell above to write/edit details easily here..."}
+              placeholder={selectedCell ? "Type cell content (changes are saved automatically!)..." : "Select any grid cell above to write/edit details easily here..."}
               value={formulaValue}
               onChange={(e) => {
                 setFormulaValue(e.target.value);
@@ -833,6 +827,11 @@ export default function ChannelIdeasWorkspace({
                     [selectedCell.colKey]: e.target.value
                   };
                   setSheetRows(updated);
+                }
+              }}
+              onBlur={() => {
+                if (selectedCell) {
+                  commitCellChange(selectedCell.rowIndex, selectedCell.colKey, formulaValue);
                 }
               }}
               onKeyDown={(e) => {
