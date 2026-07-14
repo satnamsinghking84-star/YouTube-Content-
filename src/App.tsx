@@ -194,8 +194,33 @@ export default function App() {
   const [downloadStartDate, setDownloadStartDate] = useState('2026-07-01');
   const [downloadEndDate, setDownloadEndDate] = useState('2026-07-31');
 
+  // --- Cloud Synchronization Tracking ---
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'offline'>(() => {
+    return navigator.onLine ? 'synced' : 'offline';
+  });
+  const [pendingWrites, setPendingWrites] = useState<{
+    channels: boolean;
+    content: boolean;
+    tasks: boolean;
+    ideas: boolean;
+  }>({
+    channels: false,
+    content: false,
+    tasks: false,
+    ideas: false,
+  });
+
   // --- Initialize Firebase & Setup listeners ---
   useEffect(() => {
+    const handleOnline = () => {
+      setSyncStatus(prev => prev === 'offline' ? 'synced' : prev);
+    };
+    const handleOffline = () => {
+      setSyncStatus('offline');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     let unsubscribeChannels: () => void;
     let unsubscribeContent: () => void;
     let unsubscribeTasks: () => void;
@@ -213,7 +238,14 @@ export default function App() {
     };
 
     // Setup realtime snapshots synchronously right away for ultra-fast loading
-    unsubscribeChannels = onSnapshot(collection(db, 'channels'), (snapshot) => {
+    unsubscribeChannels = onSnapshot(collection(db, 'channels'), { includeMetadataChanges: true }, (snapshot) => {
+      setPendingWrites(prev => ({ ...prev, channels: snapshot.metadata.hasPendingWrites }));
+      if (snapshot.metadata.hasPendingWrites) {
+        setSyncStatus('syncing');
+      } else {
+        setSyncStatus(prev => prev === 'syncing' || prev === 'error' ? 'synced' : prev);
+      }
+
       const loadedChannels: YouTubeChannel[] = [];
       snapshot.forEach((doc) => {
         loadedChannels.push(doc.data() as YouTubeChannel);
@@ -237,11 +269,19 @@ export default function App() {
       checkAllLoaded();
     }, (error) => {
       console.error("Channels snapshot error: ", error);
+      setSyncStatus('error');
       channelsDone = true;
       checkAllLoaded();
     });
 
-    unsubscribeContent = onSnapshot(collection(db, 'content_items'), (snapshot) => {
+    unsubscribeContent = onSnapshot(collection(db, 'content_items'), { includeMetadataChanges: true }, (snapshot) => {
+      setPendingWrites(prev => ({ ...prev, content: snapshot.metadata.hasPendingWrites }));
+      if (snapshot.metadata.hasPendingWrites) {
+        setSyncStatus('syncing');
+      } else {
+        setSyncStatus(prev => prev === 'syncing' || prev === 'error' ? 'synced' : prev);
+      }
+
       const loadedContent: ContentScheduleItem[] = [];
       snapshot.forEach((doc) => {
         loadedContent.push(doc.data() as ContentScheduleItem);
@@ -256,11 +296,19 @@ export default function App() {
       checkAllLoaded();
     }, (error) => {
       console.error("Content items snapshot error: ", error);
+      setSyncStatus('error');
       contentDone = true;
       checkAllLoaded();
     });
 
-    unsubscribeTasks = onSnapshot(collection(db, 'daily_tasks'), (snapshot) => {
+    unsubscribeTasks = onSnapshot(collection(db, 'daily_tasks'), { includeMetadataChanges: true }, (snapshot) => {
+      setPendingWrites(prev => ({ ...prev, tasks: snapshot.metadata.hasPendingWrites }));
+      if (snapshot.metadata.hasPendingWrites) {
+        setSyncStatus('syncing');
+      } else {
+        setSyncStatus(prev => prev === 'syncing' || prev === 'error' ? 'synced' : prev);
+      }
+
       const loadedTasks: DailyPlanningTask[] = [];
       snapshot.forEach((doc) => {
         loadedTasks.push(doc.data() as DailyPlanningTask);
@@ -275,11 +323,19 @@ export default function App() {
       checkAllLoaded();
     }, (error) => {
       console.error("Tasks snapshot error: ", error);
+      setSyncStatus('error');
       tasksDone = true;
       checkAllLoaded();
     });
 
-    unsubscribeIdeas = onSnapshot(collection(db, 'ideas'), (snapshot) => {
+    unsubscribeIdeas = onSnapshot(collection(db, 'ideas'), { includeMetadataChanges: true }, (snapshot) => {
+      setPendingWrites(prev => ({ ...prev, ideas: snapshot.metadata.hasPendingWrites }));
+      if (snapshot.metadata.hasPendingWrites) {
+        setSyncStatus('syncing');
+      } else {
+        setSyncStatus(prev => prev === 'syncing' || prev === 'error' ? 'synced' : prev);
+      }
+
       const loadedIdeas: ChannelIdea[] = [];
       snapshot.forEach((doc) => {
         loadedIdeas.push(doc.data() as ChannelIdea);
@@ -294,6 +350,7 @@ export default function App() {
       checkAllLoaded();
     }, (error) => {
       console.error("Ideas snapshot error: ", error);
+      setSyncStatus('error');
       ideasDone = true;
       checkAllLoaded();
     });
@@ -330,6 +387,8 @@ export default function App() {
     checkAndSeed();
 
     return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       if (unsubscribeChannels) unsubscribeChannels();
       if (unsubscribeContent) unsubscribeContent();
       if (unsubscribeTasks) unsubscribeTasks();
@@ -632,6 +691,14 @@ export default function App() {
     setShowDownloadRangeModal(false);
   };
 
+  // Derived Cloud Sync Status
+  const isSyncPending = pendingWrites.channels || pendingWrites.content || pendingWrites.tasks || pendingWrites.ideas;
+  const currentSyncStatus = !navigator.onLine 
+    ? 'offline' 
+    : isSyncPending 
+      ? 'syncing' 
+      : syncStatus;
+
   // Get current active channel object
   const activeChannel = channels.find(c => c.id === activeChannelId) || channels[0];
 
@@ -686,9 +753,60 @@ export default function App() {
               <Youtube className="w-5.5 h-5.5" />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight text-slate-900">
-                YouTube Strategist
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black tracking-tight text-slate-900">
+                  YouTube Strategist
+                </h1>
+                
+                {/* Cloud Sync Status Blinker */}
+                <div 
+                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider transition-all duration-300 border select-none ${
+                    currentSyncStatus === 'synced'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : currentSyncStatus === 'syncing'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
+                      : currentSyncStatus === 'offline'
+                      ? 'bg-slate-100 text-slate-600 border-slate-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200 animate-bounce'
+                  }`}
+                  title={
+                    currentSyncStatus === 'synced'
+                      ? 'Sabhi changes Google Cloud par surakshit save ho chuke hain!'
+                      : currentSyncStatus === 'syncing'
+                      ? 'Cloud mein data save kiya ja raha hai...'
+                      : currentSyncStatus === 'offline'
+                      ? 'Internet connected nahi hai. Offline mode.'
+                      : 'Cloud synchronization mein koi error aaya hai!'
+                  }
+                >
+                  <span className="relative flex h-1.5 w-1.5">
+                    {currentSyncStatus === 'syncing' && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    )}
+                    {currentSyncStatus === 'synced' && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    )}
+                    {currentSyncStatus === 'error' && (
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    )}
+                    <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
+                      currentSyncStatus === 'synced'
+                        ? 'bg-emerald-500'
+                        : currentSyncStatus === 'syncing'
+                        ? 'bg-blue-500'
+                        : currentSyncStatus === 'offline'
+                        ? 'bg-slate-400'
+                        : 'bg-rose-500'
+                    }`}></span>
+                  </span>
+                  <span>
+                    {currentSyncStatus === 'synced' && 'Cloud Synced'}
+                    {currentSyncStatus === 'syncing' && 'Saving...'}
+                    {currentSyncStatus === 'offline' && 'Offline'}
+                    {currentSyncStatus === 'error' && 'Sync Error'}
+                  </span>
+                </div>
+              </div>
               <p className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400">Content Scheduling Hub</p>
             </div>
           </div>
