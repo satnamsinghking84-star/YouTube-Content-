@@ -103,7 +103,7 @@ export default function ChannelIdeasWorkspace({
   // Value in the Formula Bar at the bottom
   const [formulaValue, setFormulaValue] = useState('');
   const formulaInputRef = useRef<HTMLInputElement>(null);
-
+ 
   // --- Google Sheets Integration States ---
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
@@ -111,6 +111,14 @@ export default function ChannelIdeasWorkspace({
   const [isUrlEditing, setIsUrlEditing] = useState(false);
   const [tempUrlInput, setTempUrlInput] = useState('');
   const [sheetSyncing, setSheetSyncing] = useState(false);
+
+  // --- Custom Confirmation Modal States ---
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Listen to Firebase Auth state for Google account connection
   useEffect(() => {
@@ -147,6 +155,8 @@ export default function ChannelIdeasWorkspace({
   const handleConnectGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    provider.addScope('https://www.googleapis.com/auth/userinfo.email');
+    provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
     
     try {
       setSheetSyncing(true);
@@ -155,14 +165,16 @@ export default function ChannelIdeasWorkspace({
       if (credential?.accessToken) {
         setGoogleAccessToken(credential.accessToken);
         setGoogleUser(result.user);
-        triggerToast("Google Account connected for Sheets!", "success");
+        triggerToast("Google Sheets connected successfully!", "success");
       } else {
         triggerToast("Connected, but could not retrieve access token.", "error");
       }
     } catch (err: any) {
       console.error("Google Auth failed:", err);
       if (err.code === 'auth/popup-closed-by-user' || String(err.message).includes('popup-closed-by-user')) {
-        triggerToast("Login window closed. Please click 'Open in New Tab' at the top right and try again!", "error");
+        triggerToast("Login window closed. Please try again!", "error");
+      } else if (err.code === 'auth/unauthorized-domain' || String(err.message).includes('unauthorized-domain')) {
+        triggerToast("This domain is unauthorized. Please verify your OAuth setup.", "error");
       } else {
         triggerToast(`Connection failed: ${err.message}`, "error");
       }
@@ -218,7 +230,8 @@ export default function ChannelIdeasWorkspace({
     setSheetSyncing(true);
     try {
       const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
-      const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D150`, {
+      // Fetch a wider range (columns A to Z, up to 1000 rows) to capture any custom sheet layouts
+      const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:Z1000`, {
         headers: { 'Authorization': `Bearer ${googleAccessToken}` }
       });
       if (!response.ok) {
@@ -229,28 +242,110 @@ export default function ChannelIdeasWorkspace({
       const values: string[][] = data.values || [];
       if (values.length === 0) {
         triggerToast("No data found in the Google Sheet!", "info");
+        setSheetSyncing(false);
         return;
       }
       
-      // Map columns
+      // --- Smart Column Auto-Detection Engine ---
       let startIndex = 0;
+      let titleColIndex = -1;
+      let descColIndex = -1;
+      let noColIndex = -1;
+      let statusColIndex = -1;
+
       const firstRow = values[0];
-      const isHeader = firstRow.some(cell => {
-        const lower = String(cell).toLowerCase();
-        return lower.includes('s.no') || lower.includes('serial') || lower.includes('title') || lower.includes('description') || lower.includes('status') || lower.includes('completed');
+      
+      // Detect if first row is a header row
+      const firstRowIsHeader = firstRow.some((cell) => {
+        const lower = String(cell).toLowerCase().trim();
+        return lower.includes('s.no') || lower.includes('serial') || lower.includes('title') || 
+               lower.includes('description') || lower.includes('status') || lower.includes('completed') ||
+               lower.includes('idea') || lower.includes('topic') || lower.includes('no');
       });
-      if (isHeader) {
+
+      if (firstRowIsHeader) {
         startIndex = 1;
+        // Search headers for matching names
+        firstRow.forEach((cell, idx) => {
+          const lower = String(cell).toLowerCase().trim();
+          if (lower.includes('title') || lower.includes('idea') || lower.includes('name') || lower.includes('topic') || lower === 'title' || lower === 'ideas') {
+            if (titleColIndex === -1) titleColIndex = idx;
+          } else if (lower.includes('desc') || lower.includes('detail') || lower.includes('about') || lower.includes('summary')) {
+            if (descColIndex === -1) descColIndex = idx;
+          } else if (lower.includes('status') || lower.includes('completed') || lower.includes('complete') || lower.includes('done')) {
+            if (statusColIndex === -1) statusColIndex = idx;
+          } else if (lower.includes('s.no') || lower.includes('serial') || lower.includes('number') || lower.includes('no') || lower === 'id') {
+            if (noColIndex === -1) noColIndex = idx;
+          }
+        });
+      }
+
+      // Find the first row with actual data to assess columns
+      const firstRowWithData = values[startIndex] || [];
+      const colCount = firstRowWithData.length;
+
+      // Heuristic fallback if Title Column index is not explicitly found by header
+      if (titleColIndex === -1) {
+        if (colCount === 1) {
+          titleColIndex = 0;
+        } else if (colCount === 2) {
+          // Check if first column looks like a serial/ID
+          const firstVal = String(firstRowWithData[0]).trim();
+          const isFirstColNumeric = /^\d+$/.test(firstVal) || firstVal.toLowerCase() === 's.no' || firstVal.toLowerCase() === 'no';
+          if (isFirstColNumeric) {
+            noColIndex = 0;
+            titleColIndex = 1;
+          } else {
+            titleColIndex = 0;
+            descColIndex = 1;
+          }
+        } else {
+          // 3 or more columns
+          const firstVal = String(firstRowWithData[0]).trim();
+          const isFirstColNumeric = /^\d+$/.test(firstVal) || firstVal.toLowerCase() === 's.no' || firstVal.toLowerCase() === 'no';
+          if (isFirstColNumeric) {
+            noColIndex = 0;
+            titleColIndex = 1;
+            descColIndex = colCount > 2 ? 2 : -1;
+            statusColIndex = colCount > 3 ? 3 : -1;
+          } else {
+            titleColIndex = 0;
+            descColIndex = 1;
+            statusColIndex = colCount > 2 ? 2 : -1;
+          }
+        }
+      }
+
+      // Assign remaining unmapped columns dynamically to maximize data recovery
+      if (descColIndex === -1 && colCount > titleColIndex + 1) {
+        descColIndex = titleColIndex + 1;
+      }
+      if (statusColIndex === -1 && colCount > Math.max(titleColIndex, descColIndex) + 1) {
+        statusColIndex = Math.max(titleColIndex, descColIndex) + 1;
+      }
+
+      // Ensure titleColIndex is valid and within range
+      if (titleColIndex === -1 || titleColIndex >= colCount) {
+        // Fallback to first available column
+        titleColIndex = 0;
       }
 
       const importedIdeas: Omit<ChannelIdea, 'id'>[] = [];
       for (let i = startIndex; i < values.length; i++) {
         const row = values[i];
         if (!row || row.length === 0) continue;
-        const number = row[0] ? String(row[0]).trim() : String(i + 1 - startIndex);
-        const title = row[1] ? String(row[1]).trim() : '';
-        const shortDescription = row[2] ? String(row[2]).trim() : '';
-        const statusStr = row[3] ? String(row[3]).trim().toLowerCase() : '';
+        
+        // Extract cells based on detected column indices
+        const title = row[titleColIndex] ? String(row[titleColIndex]).trim() : '';
+        const number = (noColIndex !== -1 && row[noColIndex]) 
+          ? String(row[noColIndex]).trim() 
+          : String(i + 1 - startIndex);
+        const shortDescription = (descColIndex !== -1 && row[descColIndex]) 
+          ? String(row[descColIndex]).trim() 
+          : '';
+        const statusStr = (statusColIndex !== -1 && row[statusColIndex]) 
+          ? String(row[statusColIndex]).trim().toLowerCase() 
+          : '';
         const isCompleted = statusStr === 'completed' || statusStr === 'done' || statusStr === 'yes' || statusStr === 'true';
 
         if (title) {
@@ -267,34 +362,50 @@ export default function ChannelIdeasWorkspace({
 
       if (importedIdeas.length === 0) {
         triggerToast("No valid rows with 'Title' found in Google Sheet!", "info");
+        setSheetSyncing(false);
         return;
       }
 
-      const confirmImport = window.confirm(`Found ${importedIdeas.length} ideas in Google Sheet. This will overwrite your current ideas list for "${activeChannel?.name}" in this workspace. Continue?`);
-      if (!confirmImport) return;
+      setSheetSyncing(false);
 
-      const batch = writeBatch(db);
-      // 1. Delete existing ideas for active channel
-      const currentActiveIdeas = ideas.filter(i => i.channelId === activeChannel!.id);
-      currentActiveIdeas.forEach(i => {
-        batch.delete(doc(db, 'ideas', i.id));
+      // Show modern confirmation dialog
+      setConfirmModal({
+        isOpen: true,
+        title: "Pull Data from Sheet",
+        message: `Found ${importedIdeas.length} ideas in Google Sheet (mapped title from column ${String.fromCharCode(65 + titleColIndex)}). This will overwrite your current ideas list for "${activeChannel?.name}" in this workspace. Are you sure you want to continue?`,
+        onConfirm: async () => {
+          setSheetSyncing(true);
+          try {
+            const batch = writeBatch(db);
+            // 1. Delete existing ideas for active channel
+            const currentActiveIdeas = ideas.filter(i => i.channelId === activeChannel!.id);
+            currentActiveIdeas.forEach(i => {
+              batch.delete(doc(db, 'ideas', i.id));
+            });
+
+            // 2. Add imported ideas
+            importedIdeas.forEach((imp, index) => {
+              const newId = `idea-${Date.now()}-${index}-${Math.floor(Math.random() * 100)}`;
+              batch.set(doc(db, 'ideas', newId), {
+                id: newId,
+                ...imp
+              });
+            });
+
+            await batch.commit();
+            triggerToast(`Successfully pulled and synced ${importedIdeas.length} ideas from Google Sheet!`, "success");
+          } catch (e: any) {
+            console.error("Save pull data failed:", e);
+            triggerToast(`Failed to save: ${e.message}`, "error");
+          } finally {
+            setSheetSyncing(false);
+          }
+        }
       });
 
-      // 2. Add imported ideas
-      importedIdeas.forEach((imp, index) => {
-        const newId = `idea-${Date.now()}-${index}-${Math.floor(Math.random() * 100)}`;
-        batch.set(doc(db, 'ideas', newId), {
-          id: newId,
-          ...imp
-        });
-      });
-
-      await batch.commit();
-      triggerToast(`Successfully pulled and synced ${importedIdeas.length} ideas from Google Sheet!`, "success");
     } catch (err: any) {
       console.error("Google Sheets Pull error:", err);
       triggerToast(`Pull failed: ${err.message}`, "error");
-    } finally {
       setSheetSyncing(false);
     }
   };
@@ -316,62 +427,66 @@ export default function ChannelIdeasWorkspace({
       return;
     }
 
-    const confirmExport = window.confirm(`This will export your current ${currentActiveIdeas.length} ideas and completely overwrite the values on your connected Google Sheet. Continue?`);
-    if (!confirmExport) return;
+    setConfirmModal({
+      isOpen: true,
+      title: "Push Data to Sheet",
+      message: `This will export your current ${currentActiveIdeas.length} ideas and completely overwrite the values on your connected Google Sheet. Are you sure you want to continue?`,
+      onConfirm: async () => {
+        setSheetSyncing(true);
+        try {
+          const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
+          
+          // Clear previous content
+          const clearRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D200:clear`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${googleAccessToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (!clearRes.ok) {
+            const err = await clearRes.json();
+            throw new Error(err.error?.message || 'Failed to clear existing sheet data.');
+          }
 
-    setSheetSyncing(true);
-    try {
-      const sheetName = await getFirstSheetName(spreadsheetId, googleAccessToken);
-      
-      // Clear previous content
-      const clearRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D200:clear`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${googleAccessToken}`,
-          'Content-Type': 'application/json'
+          // Format data
+          const header = ["S.No", "Idea Title", "Short Description", "Status"];
+          const rows = currentActiveIdeas.map((idea, index) => [
+            idea.number || String(index + 1),
+            idea.title || '',
+            idea.shortDescription || '',
+            idea.isCompleted ? 'Completed' : 'Pending'
+          ]);
+          const values = [header, ...rows];
+
+          // Update values
+          const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D${values.length}?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${googleAccessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              range: `${sheetName}!A1:D${values.length}`,
+              majorDimension: 'ROWS',
+              values
+            })
+          });
+
+          if (!updateRes.ok) {
+            const err = await updateRes.json();
+            throw new Error(err.error?.message || 'Failed to update sheet values.');
+          }
+
+          triggerToast("Successfully pushed and synchronized all ideas to your Google Sheet!", "success");
+        } catch (err: any) {
+          console.error("Google Sheets Push error:", err);
+          triggerToast(`Push failed: ${err.message}`, "error");
+        } finally {
+          setSheetSyncing(false);
         }
-      });
-      if (!clearRes.ok) {
-        const err = await clearRes.json();
-        throw new Error(err.error?.message || 'Failed to clear existing sheet data.');
       }
-
-      // Format data
-      const header = ["S.No", "Idea Title", "Short Description", "Status"];
-      const rows = currentActiveIdeas.map((idea, index) => [
-        idea.number || String(index + 1),
-        idea.title || '',
-        idea.shortDescription || '',
-        idea.isCompleted ? 'Completed' : 'Pending'
-      ]);
-      const values = [header, ...rows];
-
-      // Update values
-      const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:D${values.length}?valueInputOption=USER_ENTERED`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${googleAccessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          range: `${sheetName}!A1:D${values.length}`,
-          majorDimension: 'ROWS',
-          values
-        })
-      });
-
-      if (!updateRes.ok) {
-        const err = await updateRes.json();
-        throw new Error(err.error?.message || 'Failed to update sheet values.');
-      }
-
-      triggerToast("Successfully pushed and synchronized all ideas to your Google Sheet!", "success");
-    } catch (err: any) {
-      console.error("Google Sheets Push error:", err);
-      triggerToast(`Push failed: ${err.message}`, "error");
-    } finally {
-      setSheetSyncing(false);
-    }
+    });
   };
 
   const handleSaveSheetUrl = async () => {
@@ -666,28 +781,33 @@ export default function ChannelIdeasWorkspace({
   // Clear all ideas in the sheet
   const handleClearSheet = async () => {
     if (!activeChannel) return;
-    const confirmClear = window.confirm("Are you sure you want to delete all spreadsheet entries for this channel? This cannot be undone.");
-    if (!confirmClear) return;
 
-    setIsSaving(true);
-    try {
-      const activeIdeas = ideas.filter(idea => idea.channelId === activeChannel.id);
-      if (activeIdeas.length > 0) {
-        const batch = writeBatch(db);
-        activeIdeas.forEach(idea => {
-          batch.delete(doc(db, 'ideas', idea.id));
-        });
-        await batch.commit();
+    setConfirmModal({
+      isOpen: true,
+      title: "Clear Spreadsheet",
+      message: "Are you sure you want to delete all spreadsheet entries for this channel? This cannot be undone.",
+      onConfirm: async () => {
+        setIsSaving(true);
+        try {
+          const activeIdeas = ideas.filter(idea => idea.channelId === activeChannel.id);
+          if (activeIdeas.length > 0) {
+            const batch = writeBatch(db);
+            activeIdeas.forEach(idea => {
+              batch.delete(doc(db, 'ideas', idea.id));
+            });
+            await batch.commit();
+          }
+          setSelectedCell(null);
+          setInlineEditingCell(null);
+          triggerToast("Spreadsheet cleared", "success");
+        } catch (err) {
+          console.error(err);
+          triggerToast("Failed to clear sheet", "error");
+        } finally {
+          setIsSaving(false);
+        }
       }
-      setSelectedCell(null);
-      setInlineEditingCell(null);
-      triggerToast("Spreadsheet cleared", "success");
-    } catch (err) {
-      console.error(err);
-      triggerToast("Failed to clear sheet", "error");
-    } finally {
-      setIsSaving(false);
-    }
+    });
   };
 
   // Delete specified row
@@ -696,29 +816,33 @@ export default function ChannelIdeasWorkspace({
     if (!row) return;
 
     if (row.id) {
-      const confirmDelete = window.confirm(`Delete row ${row.number}: "${row.title || 'Untitled'}"?`);
-      if (!confirmDelete) return;
+      setConfirmModal({
+        isOpen: true,
+        title: "Delete Row Idea",
+        message: `Are you sure you want to delete row ${row.number}: "${row.title || 'Untitled'}"?`,
+        onConfirm: async () => {
+          setIsSaving(true);
+          try {
+            await deleteDoc(doc(db, 'ideas', row.id));
+            if (selectedCell?.rowIndex === rowIndex) {
+              setSelectedCell(null);
+              setInlineEditingCell(null);
+            }
+            triggerToast(`Row deleted`, "success");
 
-      setIsSaving(true);
-      try {
-        await deleteDoc(doc(db, 'ideas', row.id));
-        if (selectedCell?.rowIndex === rowIndex) {
-          setSelectedCell(null);
-          setInlineEditingCell(null);
+            // Trigger background push if Google Sheets is connected
+            if (googleAccessToken && googleSheetUrl) {
+              const nextIdeas = ideas.filter(i => i.id !== row.id);
+              silentPushToGoogleSheet(nextIdeas.filter(i => i.channelId === activeChannel!.id));
+            }
+          } catch (err) {
+            console.error(err);
+            triggerToast("Failed to delete row", "error");
+          } finally {
+            setIsSaving(false);
+          }
         }
-        triggerToast(`Row deleted`, "success");
-
-        // Trigger background push if Google Sheets is connected
-        if (googleAccessToken && googleSheetUrl) {
-          const nextIdeas = ideas.filter(i => i.id !== row.id);
-          silentPushToGoogleSheet(nextIdeas.filter(i => i.channelId === activeChannel!.id));
-        }
-      } catch (err) {
-        console.error(err);
-        triggerToast("Failed to delete row", "error");
-      } finally {
-        setIsSaving(false);
-      }
+      });
     } else {
       const updated = [...sheetRows];
       updated.splice(rowIndex, 1);
@@ -1546,6 +1670,37 @@ export default function ChannelIdeasWorkspace({
 
         </div>
       </div>
+
+      {/* --- CUSTOM BEAUTIFUL CONFIRMATION MODAL --- */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-slate-950 rounded-3xl max-w-md w-full p-6 shadow-[8px_8px_0px_#020617] animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-black text-slate-900 border-b-4 border-slate-950 pb-2 mb-4">
+              {confirmModal.title}
+            </h3>
+            <p className="text-sm font-bold text-slate-700 mb-6 leading-relaxed">
+              {confirmModal.message}
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold border-2 border-slate-950 rounded-xl transition-all cursor-pointer active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  confirmModal.onConfirm();
+                  setConfirmModal(null);
+                }}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black border-2 border-slate-950 rounded-xl shadow-[2px_2px_0px_#020617] transition-all cursor-pointer active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
