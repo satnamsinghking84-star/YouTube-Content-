@@ -738,9 +738,10 @@ export default function DailyPlan({
                     <button
                       type="button"
                       onClick={() => setIsPresetEditMode(!isPresetEditMode)}
-                      className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-white border border-slate-300 px-2 py-1 rounded hover:border-slate-950 transition-all cursor-pointer"
+                      className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-all cursor-pointer flex items-center justify-center border border-transparent hover:border-slate-300"
+                      title={isPresetEditMode ? 'Done Editing' : 'Edit Presets List'}
                     >
-                      {isPresetEditMode ? 'Done' : '✏️ Presets Edit Karein'}
+                      {isPresetEditMode ? <Check className="w-4 h-4 text-emerald-600 font-bold" /> : <Edit2 className="w-4 h-4" />}
                     </button>
                   </div>
 
@@ -750,7 +751,7 @@ export default function DailyPlan({
                       <div className="flex gap-1.5">
                         <input
                           type="text"
-                          placeholder="New preset text (e.g. 📝 Write script)"
+                          placeholder="New preset (e.g. 📝 Write script)"
                           value={newPresetText}
                           onChange={(e) => setNewPresetText(e.target.value)}
                           className="flex-1 px-2.5 py-1.5 bg-white border border-slate-950 rounded-lg text-[11px] font-semibold focus:outline-none"
@@ -758,7 +759,7 @@ export default function DailyPlan({
                         <button
                           type="button"
                           onClick={handleAddPresetTemplate}
-                          className="px-2.5 py-1.5 bg-slate-950 text-white rounded-lg text-[11px] font-black hover:bg-slate-900 border border-slate-950"
+                          className="px-2.5 py-1.5 bg-slate-950 text-white rounded-lg text-[11px] font-black hover:bg-slate-900 border border-slate-950 cursor-pointer"
                         >
                           Add
                         </button>
@@ -786,9 +787,10 @@ export default function DailyPlan({
                                 <button
                                   type="button"
                                   onClick={() => handleSavePresetTemplate(index)}
-                                  className="p-1 text-emerald-600 hover:bg-emerald-50 rounded text-[11px] font-bold"
+                                  className="p-1 hover:bg-emerald-50 rounded-lg transition-all cursor-pointer"
+                                  title="Save Preset"
                                 >
-                                  Save
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
                                 </button>
                               ) : (
                                 <button
@@ -797,17 +799,19 @@ export default function DailyPlan({
                                     setEditingPresetIndex(index);
                                     setEditingPresetText(preset.text);
                                   }}
-                                  className="p-1 text-slate-500 hover:text-slate-950 rounded text-[11px] font-bold"
+                                  className="p-1 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                                  title="Edit Preset"
                                 >
-                                  Edit
+                                  <Edit2 className="w-3.5 h-3.5 text-slate-600" />
                                 </button>
                               )}
                               <button
                                 type="button"
                                 onClick={() => handleDeletePresetTemplate(index)}
-                                className="p-1 text-rose-500 hover:bg-rose-50 rounded text-[11px] font-bold"
+                                className="p-1 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                title="Delete Preset"
                               >
-                                Delete
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                               </button>
                             </div>
                           </div>
@@ -819,35 +823,36 @@ export default function DailyPlan({
                       {presets.map((preset, index) => (
                         <div
                           key={index}
-                          className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between group shadow-2xs hover:bg-slate-100 transition-all"
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl flex items-center justify-between group shadow-2xs hover:bg-slate-50 transition-all gap-2"
                         >
                           <button
                             type="button"
                             onClick={() => handleSelectPreset(preset.text)}
-                            className="flex items-center gap-2 flex-1 text-left cursor-pointer focus:outline-none"
+                            className="flex items-center gap-2 flex-1 text-left cursor-pointer focus:outline-none min-w-0"
+                            title="Click to select this goal"
                           >
                             <span className="shrink-0 text-sm">{preset.text.split(' ')[0]}</span>
-                            <span className="text-xs font-bold text-slate-800">{preset.text.split(' ').slice(1).join(' ')}</span>
+                            <span className="text-xs font-black text-slate-800 truncate block flex-1">
+                              {preset.text.split(' ').slice(1).join(' ')}
+                            </span>
                           </button>
                           
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
                               onClick={() => handleSelectPreset(preset.text)}
-                              className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-all cursor-pointer flex items-center gap-0.5"
+                              className="p-1.5 text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all cursor-pointer"
                               title="Select this goal"
                             >
-                              <span>Select</span>
-                              <span>✏️</span>
+                              <Plus className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeletePresetTemplate(index)}
-                              className="text-[10px] font-black text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded transition-all cursor-pointer flex items-center gap-0.5"
-                              title="Delete preset"
+                              className="p-1.5 text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-lg transition-all cursor-pointer"
+                              title="Delete preset template"
                             >
-                              <span>Delete</span>
-                              <span>🗑️</span>
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
